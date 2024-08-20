@@ -1,6 +1,6 @@
 import streamlit as st
-from transformers import pipeline
 import re
+from transformers import pipeline
 
 # Define slide types and their rules
 SLIDE_TYPES = {
@@ -27,66 +27,165 @@ SLIDE_TYPES = {
 }
 
 @st.cache_resource
-def load_classifier():
-    return pipeline("zero-shot-classification")
+def load_nlp_pipeline():
+    return pipeline("text2text-generation", model="facebook/bart-large-cnn")
 
-@st.cache_resource
-def load_summarizer():
-    return pipeline("summarization", model="facebook/bart-large-cnn")
+nlp = load_nlp_pipeline()
 
-classifier = load_classifier()
-summarizer = load_summarizer()
+def analyze_content(text):
+    # Use the NLP model to generate a summary and extract key points
+    summary = nlp(text, max_length=100, min_length=30, do_sample=False)[0]['generated_text']
+    sentences = re.split(r'(?<=[.!?])\s+', summary)
+    return summary, sentences
 
-def classify_slide_type(text):
-    candidate_labels = list(SLIDE_TYPES.keys())
-    result = classifier(text, candidate_labels)
-    return result['labels'][0]
+def select_slide_type(content, previous_types):
+    # Logic to select appropriate slide type based on content
+    if "?" in content and "BQ" not in previous_types:
+        return "BQ"
+    elif re.search(r'\d+%|\d+\s*(?:kg|lbs?|tons?)', content) and "SS" not in previous_types:
+        return "SS"
+    elif len(re.findall(r'[.!?]', content)) >= 3 and "T3P" not in previous_types:
+        return "T3P"
+    elif re.search(r'problem|challenge|difficulty', content, re.I) and re.search(r'solution|resolve|answer', content, re.I) and "PS" not in previous_types:
+        return "PS"
+    elif len(re.findall(r'[.!?]', content)) >= 3 and "3HP" not in previous_types:
+        return "3HP"
+    elif re.search(r'(image|picture|photo|illustration)', content, re.I) and "IC" not in previous_types:
+        return "IC"
+    elif re.search(r'(quote|said|according to)', content, re.I) and "QS" not in previous_types:
+        return "QS"
+    elif "CTA" not in previous_types:
+        return "CTA"
+    else:
+        return "T3P"  # Default to T3P if no other type fits
 
 def generate_slide_content(text, slide_type):
     rules = SLIDE_TYPES[slide_type]
-    summary = summarizer(text, max_length=100, min_length=30, do_sample=False)[0]['summary_text']
+    content = text[:max(rules.values())]  # Truncate to the maximum allowed characters
     
     if slide_type == "3HP":
-        points = re.split(r'\. |\n', summary)[:3]
+        points = re.split(r'(?<=[.!?])\s+', content)[:3]
         return [point[:rules["max_chars_per_point"]] for point in points]
     elif slide_type == "T3P":
-        title = summary[:rules["max_title_chars"]]
-        paragraphs = re.split(r'\. |\n', summary)[1:4]
+        title = content.split('.')[0][:rules["max_title_chars"]]
+        paragraphs = re.split(r'(?<=[.!?])\s+', content)[1:4]
         return [title] + [p[:rules["max_paragraph_chars"]] for p in paragraphs]
     elif slide_type == "BQ":
-        return summary[:rules["max_chars"]]
-    # Add more slide type content generation logic here
+        return content[:rules["max_chars"]]
+    elif slide_type == "SS":
+        statistic = re.search(r'\d+(?:%|\s*(?:kg|lbs?|tons?))', content)
+        if statistic:
+            return statistic.group(0), content[:rules["max_context_chars"]]
+        else:
+            return "N/A", content[:rules["max_context_chars"]]
+    elif slide_type == "PS":
+        parts = content.split(',', 1)
+        return parts[0][:rules["max_chars_per_side"]], parts[1][:rules["max_chars_per_side"]] if len(parts) > 1 else ""
+    elif slide_type == "QS":
+        parts = content.split('-')
+        return parts[0][:rules["max_quote_chars"]], parts[1][:rules["max_attribution_chars"]] if len(parts) > 1 else "Anonymous"
+    elif slide_type == "CTA":
+        parts = content.split('.')
+        return parts[0][:rules["max_statement_chars"]], "Learn More"
     else:
-        return summary[:100]  # Default fallback
+        return content[:100]  # Default fallback
 
-st.title("Advanced Slide Generator")
+def render_slide(slide_type, content):
+    if slide_type == "3HP":
+        return f"""
++----------------------------------+
+|                                  |
+| {content[0][:10]}... | {content[1][:10]}... | {content[2][:10]}... |
+|                                  |
++----------------------------------+
+"""
+    elif slide_type == "T3P":
+        return f"""
++----------------------------------+
+| {content[0][:30]}...             |
+|                                  |
+| • {content[1][:50]}...           |
+|                                  |
+| • {content[2][:50]}...           |
+|                                  |
+| • {content[3][:50]}...           |
++----------------------------------+
+"""
+    elif slide_type == "BQ":
+        return f"""
++----------------------------------+
+|                                  |
+|   {content[:50]}...              |
+|                                  |
++----------------------------------+
+"""
+    elif slide_type == "SS":
+        return f"""
++----------------------------------+
+|                                  |
+|          {content[0]}            |
+|                                  |
+| {content[1][:50]}...             |
+|                                  |
++----------------------------------+
+"""
+    elif slide_type == "PS":
+        return f"""
++----------------------------------+
+| Problem:        | Solution:      |
+| {content[0][:15]}... | {content[1][:15]}... |
+|                 |                |
+|                 |                |
++----------------------------------+
+"""
+    elif slide_type == "QS":
+        return f"""
++----------------------------------+
+|                                  |
+|  "{content[0][:50]}..."          |
+|                                  |
+|             - {content[1]}       |
++----------------------------------+
+"""
+    elif slide_type == "CTA":
+        return f"""
++----------------------------------+
+|                                  |
+| {content[0][:50]}...             |
+|                                  |
+|     [{content[1]}]               |
+|                                  |
++----------------------------------+
+"""
+    else:
+        return f"""
++----------------------------------+
+|                                  |
+| {SLIDE_TYPES[slide_type]['name']} |
+|                                  |
+| {str(content)[:50]}...           |
+|                                  |
++----------------------------------+
+"""
+
+st.title("Versatile Slide Generator")
 
 input_text = st.text_area("Enter your script here:", height=200)
 
-if st.button("Generate Slide"):
+if st.button("Generate Slides"):
     if input_text:
-        with st.spinner("Generating slide..."):
-            slide_type = classify_slide_type(input_text)
-            content = generate_slide_content(input_text, slide_type)
+        summary, sentences = analyze_content(input_text)
+        slides = []
+        previous_types = []
 
-            st.subheader(f"Generated Slide: {SLIDE_TYPES[slide_type]['name']} (Key: {slide_type})")
-            st.write(f"Content: {content}")
+        for sentence in sentences:
+            slide_type = select_slide_type(sentence, previous_types)
+            content = generate_slide_content(sentence, slide_type)
+            slides.append((slide_type, content))
+            previous_types.append(slide_type)
 
-            # Mockup of slide (simplified for demonstration)
-            st.subheader("Slide Mockup")
-            st.code(f"""
-+----------------------------------+
-|     {SLIDE_TYPES[slide_type]['name']}
-|
-| {str(content)[:50]}...
-|
-+----------------------------------+
-            """)
+        for i, (slide_type, content) in enumerate(slides, 1):
+            st.subheader(f"Slide {i}: {SLIDE_TYPES[slide_type]['name']} (Key: {slide_type})")
+            st.code(render_slide(slide_type, content))
     else:
-        st.warning("Please enter some text to generate a slide.")
-
-st.markdown("""
----
-This app uses Hugging Face's pre-trained models for classification and summarization.
-It supports multiple slide types with specific rules for each.
-""")
+        st.warning("Please enter some text to generate slides.")
