@@ -33,13 +33,11 @@ def load_nlp_pipeline():
 nlp = load_nlp_pipeline()
 
 def analyze_content(text):
-    # Use the NLP model to generate a summary and extract key points
     summary = nlp(text, max_length=100, min_length=30, do_sample=False)[0]['generated_text']
     sentences = re.split(r'(?<=[.!?])\s+', summary)
     return summary, sentences
 
 def select_slide_type(content, previous_types):
-    # Logic to select appropriate slide type based on content
     if "?" in content and "BQ" not in previous_types:
         return "BQ"
     elif re.search(r'\d+%|\d+\s*(?:kg|lbs?|tons?)', content) and "SS" not in previous_types:
@@ -61,34 +59,41 @@ def select_slide_type(content, previous_types):
 
 def generate_slide_content(text, slide_type):
     rules = SLIDE_TYPES[slide_type]
-    content = text[:max(rules.values())]  # Truncate to the maximum allowed characters
     
+    def truncate(s, max_len):
+        return s[:max_len] if s else ""
+
     if slide_type == "3HP":
-        points = re.split(r'(?<=[.!?])\s+', content)[:3]
-        return [point[:rules["max_chars_per_point"]] for point in points]
+        points = re.split(r'(?<=[.!?])\s+', text)[:3]
+        return [truncate(point, rules["max_chars_per_point"]) for point in points]
     elif slide_type == "T3P":
-        title = content.split('.')[0][:rules["max_title_chars"]]
-        paragraphs = re.split(r'(?<=[.!?])\s+', content)[1:4]
-        return [title] + [p[:rules["max_paragraph_chars"]] for p in paragraphs]
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        title = truncate(sentences[0], rules["max_title_chars"])
+        paragraphs = [truncate(s, rules["max_paragraph_chars"]) for s in sentences[1:4]]
+        return [title] + paragraphs
     elif slide_type == "BQ":
-        return content[:rules["max_chars"]]
+        return truncate(text, rules["max_chars"])
     elif slide_type == "SS":
-        statistic = re.search(r'\d+(?:%|\s*(?:kg|lbs?|tons?))', content)
-        if statistic:
-            return statistic.group(0), content[:rules["max_context_chars"]]
-        else:
-            return "N/A", content[:rules["max_context_chars"]]
+        statistic = re.search(r'\d+(?:%|\s*(?:kg|lbs?|tons?))', text)
+        stat = truncate(statistic.group(0), rules["max_statistic_chars"]) if statistic else "N/A"
+        context = truncate(text, rules["max_context_chars"])
+        return stat, context
     elif slide_type == "PS":
-        parts = content.split(',', 1)
-        return parts[0][:rules["max_chars_per_side"]], parts[1][:rules["max_chars_per_side"]] if len(parts) > 1 else ""
+        parts = text.split(',', 1)
+        problem = truncate(parts[0], rules["max_chars_per_side"])
+        solution = truncate(parts[1], rules["max_chars_per_side"]) if len(parts) > 1 else ""
+        return problem, solution
     elif slide_type == "QS":
-        parts = content.split('-')
-        return parts[0][:rules["max_quote_chars"]], parts[1][:rules["max_attribution_chars"]] if len(parts) > 1 else "Anonymous"
+        parts = text.split('-')
+        quote = truncate(parts[0], rules["max_quote_chars"])
+        attribution = truncate(parts[1], rules["max_attribution_chars"]) if len(parts) > 1 else "Anonymous"
+        return quote, attribution
     elif slide_type == "CTA":
-        parts = content.split('.')
-        return parts[0][:rules["max_statement_chars"]], "Learn More"
+        parts = text.split('.')
+        statement = truncate(parts[0], rules["max_statement_chars"])
+        return statement, "Learn More"
     else:
-        return content[:100]  # Default fallback
+        return truncate(text, 100)  # Default fallback
 
 def render_slide(slide_type, content):
     if slide_type == "3HP":
@@ -174,18 +179,25 @@ input_text = st.text_area("Enter your script here:", height=200)
 
 if st.button("Generate Slides"):
     if input_text:
-        summary, sentences = analyze_content(input_text)
-        slides = []
-        previous_types = []
+        with st.spinner("Analyzing content and generating slides..."):
+            summary, sentences = analyze_content(input_text)
+            slides = []
+            previous_types = []
 
-        for sentence in sentences:
-            slide_type = select_slide_type(sentence, previous_types)
-            content = generate_slide_content(sentence, slide_type)
-            slides.append((slide_type, content))
-            previous_types.append(slide_type)
+            for sentence in sentences:
+                slide_type = select_slide_type(sentence, previous_types)
+                content = generate_slide_content(sentence, slide_type)
+                slides.append((slide_type, content))
+                previous_types.append(slide_type)
 
-        for i, (slide_type, content) in enumerate(slides, 1):
-            st.subheader(f"Slide {i}: {SLIDE_TYPES[slide_type]['name']} (Key: {slide_type})")
-            st.code(render_slide(slide_type, content))
+            for i, (slide_type, content) in enumerate(slides, 1):
+                st.subheader(f"Slide {i}: {SLIDE_TYPES[slide_type]['name']} (Key: {slide_type})")
+                st.code(render_slide(slide_type, content))
     else:
         st.warning("Please enter some text to generate slides.")
+
+st.markdown("""
+---
+This app uses a pre-trained NLP model to analyze your input and generate appropriate slides.
+The slide types and layouts are based on predefined rules, but the content is dynamically generated.
+""")
