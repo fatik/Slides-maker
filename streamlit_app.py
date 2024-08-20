@@ -1,19 +1,20 @@
 import streamlit as st
-import re
+from transformers import pipeline
 
-def simple_classify(text):
-    # Simple classification based on keywords
-    action_words = ['action', 'now', 'urgent', 'immediately', 'start']
-    return "Call to Action" if any(word in text.lower() for word in action_words) else "Content"
+# Use Streamlit's caching to load models efficiently
+@st.cache_resource
+def load_classifier():
+    return pipeline("text-classification", model="distilbert-base-uncased-finetuned-sst-2-english")
 
-def simple_summarize(text, max_words=20):
-    # Simple summarization by taking the first few sentences
-    sentences = re.split(r'(?<=[.!?])\s+', text)
-    summary = ' '.join(sentences[:2])  # Take first two sentences
-    words = summary.split()
-    return ' '.join(words[:max_words])
+@st.cache_resource
+def load_summarizer():
+    return pipeline("summarization", model="facebook/bart-large-cnn")
 
-st.title("Simple Slide Generator")
+# Load models
+classifier = load_classifier()
+summarizer = load_summarizer()
+
+st.title("Quick Slide Generator")
 
 input_text = st.text_area("Enter your script here:", height=200)
 
@@ -21,10 +22,11 @@ if st.button("Generate Slide"):
     if input_text:
         with st.spinner("Generating slide..."):
             # Classify the input
-            slide_type = simple_classify(input_text)
+            classification = classifier(input_text)[0]
+            slide_type = "Content" if classification['label'] == 'POSITIVE' else "Call to Action"
 
             # Generate summary for slide content
-            summary = simple_summarize(input_text)
+            summary = summarizer(input_text, max_length=50, min_length=10, do_sample=False)[0]['summary_text']
 
             # Display results
             st.subheader("Generated Slide")
@@ -61,6 +63,9 @@ if st.button("Generate Slide"):
 
 st.markdown("""
 ---
-This is a simplified slide generator using basic text processing.
-For more advanced features, consider using NLP libraries and fine-tuned models.
+This app uses Hugging Face's pre-trained models:
+- DistilBERT for text classification
+- BART for text summarization
+
+For a production system, you'd want to fine-tune these models on your specific slide data.
 """)
