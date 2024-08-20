@@ -72,55 +72,63 @@ def generate_slide_content(text, slide_type):
         paragraphs = [truncate(s, rules["max_paragraph_chars"]) for s in sentences[1:4]]
         return [title] + paragraphs
     elif slide_type == "BQ":
-        return truncate(text, rules["max_chars"])
+        return [truncate(text, rules["max_chars"])]
     elif slide_type == "SS":
         statistic = re.search(r'\d+(?:%|\s*(?:kg|lbs?|tons?))', text)
         stat = truncate(statistic.group(0), rules["max_statistic_chars"]) if statistic else "N/A"
         context = truncate(text, rules["max_context_chars"])
-        return stat, context
+        return [stat, context]
     elif slide_type == "PS":
         parts = text.split(',', 1)
         problem = truncate(parts[0], rules["max_chars_per_side"])
         solution = truncate(parts[1], rules["max_chars_per_side"]) if len(parts) > 1 else ""
-        return problem, solution
+        return [problem, solution]
     elif slide_type == "QS":
         parts = text.split('-')
         quote = truncate(parts[0], rules["max_quote_chars"])
         attribution = truncate(parts[1], rules["max_attribution_chars"]) if len(parts) > 1 else "Anonymous"
-        return quote, attribution
+        return [quote, attribution]
     elif slide_type == "CTA":
         parts = text.split('.')
         statement = truncate(parts[0], rules["max_statement_chars"])
-        return statement, "Learn More"
+        return [statement, "Learn More"]
     else:
-        return truncate(text, 100)  # Default fallback
+        return [truncate(text, 100)]  # Default fallback
 
 def render_slide(slide_type, content):
+    def safe_content(index, max_length=50):
+        if isinstance(content, (list, tuple)) and len(content) > index:
+            return str(content[index])[:max_length] + "..."
+        elif isinstance(content, str):
+            return content[:max_length] + "..."
+        else:
+            return "N/A"
+
     if slide_type == "3HP":
         return f"""
 +----------------------------------+
 |                                  |
-| {content[0][:10]}... | {content[1][:10]}... | {content[2][:10]}... |
+| {safe_content(0, 10)} | {safe_content(1, 10)} | {safe_content(2, 10)} |
 |                                  |
 +----------------------------------+
 """
     elif slide_type == "T3P":
         return f"""
 +----------------------------------+
-| {content[0][:30]}...             |
+| {safe_content(0, 30)}            |
 |                                  |
-| • {content[1][:50]}...           |
+| • {safe_content(1, 50)}          |
 |                                  |
-| • {content[2][:50]}...           |
+| • {safe_content(2, 50)}          |
 |                                  |
-| • {content[3][:50]}...           |
+| • {safe_content(3, 50)}          |
 +----------------------------------+
 """
     elif slide_type == "BQ":
         return f"""
 +----------------------------------+
 |                                  |
-|   {content[:50]}...              |
+|   {safe_content(0, 50)}          |
 |                                  |
 +----------------------------------+
 """
@@ -128,9 +136,9 @@ def render_slide(slide_type, content):
         return f"""
 +----------------------------------+
 |                                  |
-|          {content[0]}            |
+|          {safe_content(0, 20)}   |
 |                                  |
-| {content[1][:50]}...             |
+| {safe_content(1, 50)}            |
 |                                  |
 +----------------------------------+
 """
@@ -138,7 +146,7 @@ def render_slide(slide_type, content):
         return f"""
 +----------------------------------+
 | Problem:        | Solution:      |
-| {content[0][:15]}... | {content[1][:15]}... |
+| {safe_content(0, 15)} | {safe_content(1, 15)} |
 |                 |                |
 |                 |                |
 +----------------------------------+
@@ -147,18 +155,18 @@ def render_slide(slide_type, content):
         return f"""
 +----------------------------------+
 |                                  |
-|  "{content[0][:50]}..."          |
+|  "{safe_content(0, 50)}"         |
 |                                  |
-|             - {content[1]}       |
+|             - {safe_content(1, 20)}|
 +----------------------------------+
 """
     elif slide_type == "CTA":
         return f"""
 +----------------------------------+
 |                                  |
-| {content[0][:50]}...             |
+| {safe_content(0, 50)}            |
 |                                  |
-|     [{content[1]}]               |
+|     [{safe_content(1, 20)}]      |
 |                                  |
 +----------------------------------+
 """
@@ -168,12 +176,12 @@ def render_slide(slide_type, content):
 |                                  |
 | {SLIDE_TYPES[slide_type]['name']} |
 |                                  |
-| {str(content)[:50]}...           |
+| {safe_content(0, 50)}            |
 |                                  |
 +----------------------------------+
 """
 
-st.title("Script to Layout Video")
+st.title("Versatile Slide Generator")
 
 input_text = st.text_area("Enter your script here:", height=200)
 
