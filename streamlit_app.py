@@ -1,7 +1,6 @@
 import streamlit as st
 import re
 from transformers import pipeline
-import random
 
 # Define slide layouts
 SLIDE_LAYOUTS = {
@@ -91,56 +90,63 @@ def extract_key_info(text):
 
 def fit_content_to_layout(content, layout):
     fitted_content = {}
+    
+    def safe_get(lst, index, default=""):
+        return lst[index] if index < len(lst) else default
+    
+    def safe_split(text, max_words):
+        words = text.split()
+        return ' '.join(words[:max_words])
+
     for element in layout['elements']:
-        if element['type'] == 'heading' or element['type'] == 'title':
-            words = content[0].split()
-            fitted_content[element['type']] = ' '.join(words[:element['max_words']])
-            content = content[1:]
+        if element['type'] in ['heading', 'title', 'caption', 'subheading', 'description']:
+            fitted_content[element['type']] = safe_split(safe_get(content, 0), element['max_words'])
+            if content:
+                content = content[1:]
         elif element['type'] == 'bullets':
             bullets = []
             for _ in range(min(element['max_bullets'], len(content))):
-                words = content[0].split()
-                bullets.append(' '.join(words[:element['max_words_per_bullet']]))
-                content = content[1:]
+                bullets.append(safe_split(safe_get(content, 0), element['max_words_per_bullet']))
+                if content:
+                    content = content[1:]
             fitted_content[element['type']] = bullets
         elif element['type'] == 'quote':
-            words = content[0].split()
-            fitted_content[element['type']] = ' '.join(words[:element['max_words']])
-            content = content[1:]
+            fitted_content[element['type']] = safe_split(safe_get(content, 0), element['max_words'])
+            if content:
+                content = content[1:]
         elif element['type'] == 'attribution':
-            words = content[-1].split()
-            fitted_content[element['type']] = ' '.join(words[:element['max_words']])
-        elif element['type'] == 'caption' or element['type'] == 'subheading' or element['type'] == 'description':
-            words = ' '.join(content).split()
-            fitted_content[element['type']] = ' '.join(words[:element['max_words']])
+            fitted_content[element['type']] = safe_split(safe_get(content, -1), element['max_words'])
         elif element['type'] == 'number':
             numbers = re.findall(r'\d+', ' '.join(content))
             fitted_content[element['type']] = numbers[0] if numbers else "N/A"
         elif element['type'] == 'timeline_points':
             points = []
             for _ in range(min(element['max_points'], len(content))):
-                words = content[0].split()
-                points.append(' '.join(words[:element['max_words_per_point']]))
-                content = content[1:]
+                points.append(safe_split(safe_get(content, 0), element['max_words_per_point']))
+                if content:
+                    content = content[1:]
             fitted_content[element['type']] = points
         elif element['type'] == 'button':
-            words = content[-1].split()
-            fitted_content[element['type']] = ' '.join(words[:element['max_words']])
+            fitted_content[element['type']] = safe_split(safe_get(content, -1), element['max_words'])
         elif element['type'] == 'comparison':
             items = []
             for _ in range(element['items']):
+                items.append(safe_split(safe_get(content, 0), element['max_words_per_item']))
                 if content:
-                    words = content[0].split()
-                    items.append(' '.join(words[:element['max_words_per_item']]))
                     content = content[1:]
             fitted_content[element['type']] = items
         elif element['type'] == 'column':
-            words = ' '.join(content[:2]).split()
-            fitted_content[element['type']] = fitted_content.get(element['type'], []) + [' '.join(words[:element['max_words']])]
-            content = content[2:]
+            column_content = ' '.join(content[:2])
+            fitted_content[element['type']] = fitted_content.get(element['type'], []) + [safe_split(column_content, element['max_words'])]
+            content = content[2:] if len(content) > 2 else []
+        elif element['type'] == 'image_placeholder':
+            fitted_content[element['type']] = "[Image Placeholder]"
+
     return fitted_content
 
 def select_layout(content):
+    if not content:
+        return "BH"  # Default to Big Heading if no content
     if any('?' in sentence for sentence in content):
         return "BH"
     elif any(re.search(r'\d+', sentence) for sentence in content):
@@ -174,7 +180,7 @@ def render_slide(layout_key, content):
                 slide += f"<{element['type']} style='{element['style']}'>{content[element['type']]}</{element['type']}>\n"
     return slide
 
-st.title("Intelligent Layout-Based Slide Generator")
+st.title("Layout Generator")
 
 input_text = st.text_area("Enter your script here:", height=200)
 
@@ -190,6 +196,8 @@ if st.button("Generate Slides"):
                 content = fit_content_to_layout(key_info, layout)
                 slides.append((layout_key, content))
                 key_info = key_info[len(layout['elements']):]  # Move to next chunk of content
+                if not key_info:  # If we've used all content, break the loop
+                    break
             
             for i, (layout_key, content) in enumerate(slides, 1):
                 st.subheader(f"Slide {i}: {SLIDE_LAYOUTS[layout_key]['name']}")
