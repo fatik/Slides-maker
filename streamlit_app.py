@@ -173,7 +173,7 @@ def render_slide(slide_type, content):
 +----------------------------------+
 """
 
-st.title("Versatile Slide Generator")
+st.title("Script to Layout Video")
 
 input_text = st.text_area("Enter your script here:", height=200)
 
