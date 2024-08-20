@@ -1,19 +1,71 @@
-# 🎈 Blank app template
+import streamlit as st
+from transformers import pipeline
 
-A simple Streamlit app template for you to modify!
+# Use Streamlit's caching to load models efficiently
+@st.cache_resource
+def load_classifier():
+    return pipeline("text-classification", model="distilbert-base-uncased-finetuned-sst-2-english")
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://blank-app-template.streamlit.app/)
+@st.cache_resource
+def load_summarizer():
+    return pipeline("summarization", model="facebook/bart-large-cnn")
 
-### How to run it on your own machine
+# Load models
+classifier = load_classifier()
+summarizer = load_summarizer()
 
-1. Install the requirements
+st.title("Quick Slide Generator")
 
-   ```
-   $ pip install -r requirements.txt
-   ```
+input_text = st.text_area("Enter your script here:", height=200)
 
-2. Run the app
+if st.button("Generate Slide"):
+    if input_text:
+        with st.spinner("Generating slide..."):
+            # Classify the input
+            classification = classifier(input_text)[0]
+            slide_type = "Content" if classification['label'] == 'POSITIVE' else "Call to Action"
 
-   ```
-   $ streamlit run streamlit_app.py
-   ```
+            # Generate summary for slide content
+            summary = summarizer(input_text, max_length=50, min_length=10, do_sample=False)[0]['summary_text']
+
+            # Display results
+            st.subheader("Generated Slide")
+            st.write(f"Slide Type: {slide_type}")
+            st.write(f"Slide Content: {summary}")
+
+            # Mockup of slide
+            st.subheader("Slide Mockup")
+            if slide_type == "Content":
+                st.markdown(f"""
+                ```
+                +----------------------------------+
+                |           Content Slide          |
+                |                                  |
+                | {summary[:50]}...                |
+                |                                  |
+                +----------------------------------+
+                ```
+                """)
+            else:
+                st.markdown(f"""
+                ```
+                +----------------------------------+
+                |        Call to Action Slide      |
+                |                                  |
+                | {summary[:50]}...                |
+                |                                  |
+                |          [Take Action Now]       |
+                +----------------------------------+
+                ```
+                """)
+    else:
+        st.warning("Please enter some text to generate a slide.")
+
+st.markdown("""
+---
+This app uses Hugging Face's pre-trained models:
+- DistilBERT for text classification
+- BART for text summarization
+
+For a production system, you'd want to fine-tune these models on your specific slide data.
+""")
