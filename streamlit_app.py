@@ -1,211 +1,204 @@
 import streamlit as st
 import re
 from transformers import pipeline
+import random
 
-# Define slide types and their rules
-SLIDE_TYPES = {
-    "3HP": {"name": "Three Horizontal Points", "max_points": 3, "max_chars_per_point": 30},
-    "T3P": {"name": "Title with Three Paragraphs", "max_title_chars": 50, "max_paragraph_chars": 160},
-    "BQ": {"name": "Big Question", "max_chars": 100},
-    "IC": {"name": "Image with Caption", "max_caption_chars": 100},
-    "2CC": {"name": "Two-Column Compare", "max_header_chars": 40, "points_per_column": 4, "max_point_chars": 50},
-    "QS": {"name": "Quote Spotlight", "max_quote_chars": 200, "max_attribution_chars": 50},
-    "PL": {"name": "Pyramid List", "levels": 3, "max_chars_per_item": 30},
-    "CP": {"name": "Circular Process", "min_circles": 4, "max_circles": 6, "max_chars_per_circle": 20},
-    "TL": {"name": "Timeline", "points": 5, "max_date_chars": 15, "max_event_chars": 50},
-    "DV": {"name": "Data Visualization", "max_title_chars": 60, "max_legend_items": 5, "max_legend_item_chars": 20},
-    "PS": {"name": "Problem-Solution", "max_chars_per_side": 200},
-    "TS": {"name": "Team Showcase", "grid": (3, 2), "max_name_chars": 30},
-    "SS": {"name": "Single Statistic", "max_statistic_chars": 20, "max_context_chars": 100},
-    "SWOT": {"name": "SWOT Analysis", "quadrants": 4, "max_title_chars": 20, "max_content_chars_per_quadrant": 100},
-    "MM": {"name": "Mind Map", "branches": 5, "max_center_chars": 30, "max_branch_chars": 40},
-    "BA": {"name": "Before and After", "max_chars_per_side": 150},
-    "CL": {"name": "Checklist", "min_items": 5, "max_items": 7, "max_title_chars": 50, "max_item_chars": 60},
-    "RM": {"name": "Roadmap", "milestones": 5, "max_chars_per_milestone": 30},
-    "TM": {"name": "Testimonial", "max_quote_chars": 200, "max_name_chars": 30, "max_title_chars": 50},
-    "CTA": {"name": "Call to Action", "max_statement_chars": 100, "max_button_chars": 20}
+# Define slide layouts
+SLIDE_LAYOUTS = {
+    "BH": {
+        "name": "Big Heading",
+        "elements": [
+            {"type": "heading", "max_words": 4, "style": "large, centered"}
+        ]
+    },
+    "HCS": {
+        "name": "Heading with Caption and Subheading",
+        "elements": [
+            {"type": "heading", "max_words": 5, "style": "large"},
+            {"type": "caption", "max_words": 10, "style": "medium"},
+            {"type": "subheading", "max_words": 15, "style": "small"}
+        ]
+    },
+    "TB": {
+        "name": "Title with Bullets",
+        "elements": [
+            {"type": "title", "max_words": 7, "style": "large"},
+            {"type": "bullets", "max_bullets": 4, "max_words_per_bullet": 8, "style": "medium"}
+        ]
+    },
+    "QS": {
+        "name": "Quote Spotlight",
+        "elements": [
+            {"type": "quote", "max_words": 20, "style": "large, italics"},
+            {"type": "attribution", "max_words": 5, "style": "small"}
+        ]
+    },
+    "IC": {
+        "name": "Image with Caption",
+        "elements": [
+            {"type": "image_placeholder", "style": "centered"},
+            {"type": "caption", "max_words": 15, "style": "small"}
+        ]
+    },
+    "2C": {
+        "name": "Two Columns",
+        "elements": [
+            {"type": "column", "max_words": 30, "style": "left"},
+            {"type": "column", "max_words": 30, "style": "right"}
+        ]
+    },
+    "NS": {
+        "name": "Number Spotlight",
+        "elements": [
+            {"type": "number", "style": "very large, centered"},
+            {"type": "description", "max_words": 10, "style": "medium"}
+        ]
+    },
+    "TM": {
+        "name": "Timeline",
+        "elements": [
+            {"type": "title", "max_words": 5, "style": "large"},
+            {"type": "timeline_points", "max_points": 5, "max_words_per_point": 6, "style": "small"}
+        ]
+    },
+    "CTA": {
+        "name": "Call to Action",
+        "elements": [
+            {"type": "heading", "max_words": 6, "style": "large"},
+            {"type": "subheading", "max_words": 10, "style": "medium"},
+            {"type": "button", "max_words": 3, "style": "prominent"}
+        ]
+    },
+    "CM": {
+        "name": "Comparison",
+        "elements": [
+            {"type": "title", "max_words": 5, "style": "large"},
+            {"type": "comparison", "items": 2, "max_words_per_item": 20, "style": "side-by-side"}
+        ]
+    }
 }
 
 @st.cache_resource
 def load_nlp_pipeline():
-    return pipeline("text2text-generation", model="facebook/bart-large-cnn")
+    return pipeline("summarization", model="facebook/bart-large-cnn")
 
 nlp = load_nlp_pipeline()
 
-def analyze_content(text):
-    summary = nlp(text, max_length=100, min_length=30, do_sample=False)[0]['generated_text']
+def extract_key_info(text):
+    summary = nlp(text, max_length=100, min_length=30, do_sample=False)[0]['summary_text']
     sentences = re.split(r'(?<=[.!?])\s+', summary)
-    return summary, sentences
+    return sentences
 
-def select_slide_type(content, previous_types):
-    if "?" in content and "BQ" not in previous_types:
-        return "BQ"
-    elif re.search(r'\d+%|\d+\s*(?:kg|lbs?|tons?)', content) and "SS" not in previous_types:
-        return "SS"
-    elif len(re.findall(r'[.!?]', content)) >= 3 and "T3P" not in previous_types:
-        return "T3P"
-    elif re.search(r'problem|challenge|difficulty', content, re.I) and re.search(r'solution|resolve|answer', content, re.I) and "PS" not in previous_types:
-        return "PS"
-    elif len(re.findall(r'[.!?]', content)) >= 3 and "3HP" not in previous_types:
-        return "3HP"
-    elif re.search(r'(image|picture|photo|illustration)', content, re.I) and "IC" not in previous_types:
-        return "IC"
-    elif re.search(r'(quote|said|according to)', content, re.I) and "QS" not in previous_types:
+def fit_content_to_layout(content, layout):
+    fitted_content = {}
+    for element in layout['elements']:
+        if element['type'] == 'heading' or element['type'] == 'title':
+            words = content[0].split()
+            fitted_content[element['type']] = ' '.join(words[:element['max_words']])
+            content = content[1:]
+        elif element['type'] == 'bullets':
+            bullets = []
+            for _ in range(min(element['max_bullets'], len(content))):
+                words = content[0].split()
+                bullets.append(' '.join(words[:element['max_words_per_bullet']]))
+                content = content[1:]
+            fitted_content[element['type']] = bullets
+        elif element['type'] == 'quote':
+            words = content[0].split()
+            fitted_content[element['type']] = ' '.join(words[:element['max_words']])
+            content = content[1:]
+        elif element['type'] == 'attribution':
+            words = content[-1].split()
+            fitted_content[element['type']] = ' '.join(words[:element['max_words']])
+        elif element['type'] == 'caption' or element['type'] == 'subheading' or element['type'] == 'description':
+            words = ' '.join(content).split()
+            fitted_content[element['type']] = ' '.join(words[:element['max_words']])
+        elif element['type'] == 'number':
+            numbers = re.findall(r'\d+', ' '.join(content))
+            fitted_content[element['type']] = numbers[0] if numbers else "N/A"
+        elif element['type'] == 'timeline_points':
+            points = []
+            for _ in range(min(element['max_points'], len(content))):
+                words = content[0].split()
+                points.append(' '.join(words[:element['max_words_per_point']]))
+                content = content[1:]
+            fitted_content[element['type']] = points
+        elif element['type'] == 'button':
+            words = content[-1].split()
+            fitted_content[element['type']] = ' '.join(words[:element['max_words']])
+        elif element['type'] == 'comparison':
+            items = []
+            for _ in range(element['items']):
+                if content:
+                    words = content[0].split()
+                    items.append(' '.join(words[:element['max_words_per_item']]))
+                    content = content[1:]
+            fitted_content[element['type']] = items
+        elif element['type'] == 'column':
+            words = ' '.join(content[:2]).split()
+            fitted_content[element['type']] = fitted_content.get(element['type'], []) + [' '.join(words[:element['max_words']])]
+            content = content[2:]
+    return fitted_content
+
+def select_layout(content):
+    if any('?' in sentence for sentence in content):
+        return "BH"
+    elif any(re.search(r'\d+', sentence) for sentence in content):
+        return "NS"
+    elif len(content) >= 4:
+        return "TB"
+    elif any('"' in sentence for sentence in content):
         return "QS"
-    elif "CTA" not in previous_types:
+    elif any('image' in sentence.lower() for sentence in content):
+        return "IC"
+    elif len(content) == 2:
+        return "2C"
+    elif any('timeline' in sentence.lower() for sentence in content):
+        return "TM"
+    elif any('action' in sentence.lower() for sentence in content):
         return "CTA"
+    elif any('compare' in sentence.lower() or 'versus' in sentence.lower() for sentence in content):
+        return "CM"
     else:
-        return "T3P"  # Default to T3P if no other type fits
+        return "HCS"
 
-def generate_slide_content(text, slide_type):
-    rules = SLIDE_TYPES[slide_type]
-    
-    def truncate(s, max_len):
-        return s[:max_len] if s else ""
+def render_slide(layout_key, content):
+    layout = SLIDE_LAYOUTS[layout_key]
+    slide = f"[Slide: {layout['name']}]\n"
+    for element in layout['elements']:
+        if element['type'] in content:
+            if isinstance(content[element['type']], list):
+                for item in content[element['type']]:
+                    slide += f"<{element['type']} style='{element['style']}'>{item}</{element['type']}>\n"
+            else:
+                slide += f"<{element['type']} style='{element['style']}'>{content[element['type']]}</{element['type']}>\n"
+    return slide
 
-    if slide_type == "3HP":
-        points = re.split(r'(?<=[.!?])\s+', text)[:3]
-        return [truncate(point, rules["max_chars_per_point"]) for point in points]
-    elif slide_type == "T3P":
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        title = truncate(sentences[0], rules["max_title_chars"])
-        paragraphs = [truncate(s, rules["max_paragraph_chars"]) for s in sentences[1:4]]
-        return [title] + paragraphs
-    elif slide_type == "BQ":
-        return [truncate(text, rules["max_chars"])]
-    elif slide_type == "SS":
-        statistic = re.search(r'\d+(?:%|\s*(?:kg|lbs?|tons?))', text)
-        stat = truncate(statistic.group(0), rules["max_statistic_chars"]) if statistic else "N/A"
-        context = truncate(text, rules["max_context_chars"])
-        return [stat, context]
-    elif slide_type == "PS":
-        parts = text.split(',', 1)
-        problem = truncate(parts[0], rules["max_chars_per_side"])
-        solution = truncate(parts[1], rules["max_chars_per_side"]) if len(parts) > 1 else ""
-        return [problem, solution]
-    elif slide_type == "QS":
-        parts = text.split('-')
-        quote = truncate(parts[0], rules["max_quote_chars"])
-        attribution = truncate(parts[1], rules["max_attribution_chars"]) if len(parts) > 1 else "Anonymous"
-        return [quote, attribution]
-    elif slide_type == "CTA":
-        parts = text.split('.')
-        statement = truncate(parts[0], rules["max_statement_chars"])
-        return [statement, "Learn More"]
-    else:
-        return [truncate(text, 100)]  # Default fallback
-
-def render_slide(slide_type, content):
-    def safe_content(index, max_length=50):
-        if isinstance(content, (list, tuple)) and len(content) > index:
-            return str(content[index])[:max_length] + "..."
-        elif isinstance(content, str):
-            return content[:max_length] + "..."
-        else:
-            return "N/A"
-
-    if slide_type == "3HP":
-        return f"""
-+----------------------------------+
-|                                  |
-| {safe_content(0, 10)} | {safe_content(1, 10)} | {safe_content(2, 10)} |
-|                                  |
-+----------------------------------+
-"""
-    elif slide_type == "T3P":
-        return f"""
-+----------------------------------+
-| {safe_content(0, 30)}            |
-|                                  |
-| • {safe_content(1, 50)}          |
-|                                  |
-| • {safe_content(2, 50)}          |
-|                                  |
-| • {safe_content(3, 50)}          |
-+----------------------------------+
-"""
-    elif slide_type == "BQ":
-        return f"""
-+----------------------------------+
-|                                  |
-|   {safe_content(0, 50)}          |
-|                                  |
-+----------------------------------+
-"""
-    elif slide_type == "SS":
-        return f"""
-+----------------------------------+
-|                                  |
-|          {safe_content(0, 20)}   |
-|                                  |
-| {safe_content(1, 50)}            |
-|                                  |
-+----------------------------------+
-"""
-    elif slide_type == "PS":
-        return f"""
-+----------------------------------+
-| Problem:        | Solution:      |
-| {safe_content(0, 15)} | {safe_content(1, 15)} |
-|                 |                |
-|                 |                |
-+----------------------------------+
-"""
-    elif slide_type == "QS":
-        return f"""
-+----------------------------------+
-|                                  |
-|  "{safe_content(0, 50)}"         |
-|                                  |
-|             - {safe_content(1, 20)}|
-+----------------------------------+
-"""
-    elif slide_type == "CTA":
-        return f"""
-+----------------------------------+
-|                                  |
-| {safe_content(0, 50)}            |
-|                                  |
-|     [{safe_content(1, 20)}]      |
-|                                  |
-+----------------------------------+
-"""
-    else:
-        return f"""
-+----------------------------------+
-|                                  |
-| {SLIDE_TYPES[slide_type]['name']} |
-|                                  |
-| {safe_content(0, 50)}            |
-|                                  |
-+----------------------------------+
-"""
-
-st.title("Versatile Slide Generator")
+st.title("Intelligent Layout-Based Slide Generator")
 
 input_text = st.text_area("Enter your script here:", height=200)
 
 if st.button("Generate Slides"):
     if input_text:
         with st.spinner("Analyzing content and generating slides..."):
-            summary, sentences = analyze_content(input_text)
+            key_info = extract_key_info(input_text)
             slides = []
-            previous_types = []
-
-            for sentence in sentences:
-                slide_type = select_slide_type(sentence, previous_types)
-                content = generate_slide_content(sentence, slide_type)
-                slides.append((slide_type, content))
-                previous_types.append(slide_type)
-
-            for i, (slide_type, content) in enumerate(slides, 1):
-                st.subheader(f"Slide {i}: {SLIDE_TYPES[slide_type]['name']} (Key: {slide_type})")
-                st.code(render_slide(slide_type, content))
+            
+            while key_info:
+                layout_key = select_layout(key_info[:3])  # Look at next 3 sentences max
+                layout = SLIDE_LAYOUTS[layout_key]
+                content = fit_content_to_layout(key_info, layout)
+                slides.append((layout_key, content))
+                key_info = key_info[len(layout['elements']):]  # Move to next chunk of content
+            
+            for i, (layout_key, content) in enumerate(slides, 1):
+                st.subheader(f"Slide {i}: {SLIDE_LAYOUTS[layout_key]['name']}")
+                st.code(render_slide(layout_key, content))
     else:
         st.warning("Please enter some text to generate slides.")
 
 st.markdown("""
 ---
 This app uses a pre-trained NLP model to analyze your input and generate appropriate slides.
-The slide types and layouts are based on predefined rules, but the content is dynamically generated.
+The slide layouts are predefined, but the content is dynamically fitted to each layout.
 """)
