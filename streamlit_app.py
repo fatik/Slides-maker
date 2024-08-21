@@ -31,7 +31,7 @@ def ai_process_content(text, instruction, max_retries=5):
     data = {
         "model": "mixtral-8x7b-32768",
         "messages": [
-            {"role": "system", "content": "Create concise slide content from video script text. Never use quotation marks unless it's a direct quote. Keep the content direct and relevant to the slide, never exceeding the length of text provided. For single facts or points, don't use slide with bullets. Never mention scene numbers in the content. Provide unique content for each bullet point. Do not include your own prompts or descriptions or explain yourself why you did what you did, don't leave notes or explain yourself in brackets. If the slide have 1-8 words and you don't have context about it or it can't be summarized futher then no need to give output, leave it blank. Your job is to supplement the narration or subtitles, not be alternative"},
+            {"role": "system", "content": "Create concise slide content from video script text. Never use quotation marks unless it's a direct quote. Keep the content direct and relevant to the slide, never exceeding the length of text provided. For single facts or points, don't use slide with bullets. Never mention scene numbers in the content. Provide unique content for each bullet point. Do not include your own prompts, descriptions, or explanations. If the slide has 1-8 words and you don't have context about it or it can't be summarized further then no need to give output, leave it blank. Your job is to supplement the narration or subtitles, not be alternative. For two-column slides, ensure the content is distinct for each column."},
             {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
         ]
     }
@@ -63,8 +63,8 @@ def select_layout(scene_content):
         return "big_center"
     elif any(word in scene_content.lower() for word in ["first", "then", "finally", "lastly"]):
         return "two_columns"
-    elif "versus" in scene_content.lower() or "compared to" in scene_content.lower():
-        return "comparison"
+    elif "versus" in scene_content.lower() or "compared to" in scene_content.lower() or "but" in scene_content.lower():
+        return "two_columns"
     elif len(re.findall(r'[.!?]', scene_content)) >= 3:
         return "bullet_points"
     elif "image" in scene_content.lower() or "picture" in scene_content.lower():
@@ -92,8 +92,13 @@ def process_scene(scene_number, scene_content):
         content["title"] = ai_process_content(scene_content, "Create a short title (3-5 words) for a bullet point slide.")
         content["bullets"] = [ai_process_content(scene_content, f"Extract unique key point {i} (5-9 words) for a bullet on the slide. Ensure each point is distinct.") for i in range(1, 4)]
     elif layout == "two_columns":
-        content["left"] = ai_process_content(scene_content, "Present the idea before keyword such as but in words not exceeding 15")
-        content["right"] = ai_process_content(scene_content, "Present the idea after keyword such as but in words not exceeding 15")
+        split_content = re.split(r'\s+but\s+|\s+versus\s+|\s+compared\s+to\s+', scene_content, flags=re.IGNORECASE)
+        if len(split_content) > 1:
+            content["left"] = ai_process_content(split_content[0], "Summarize this part in 5-7 words.")
+            content["right"] = ai_process_content(split_content[1], "Summarize this part in 5-7 words.")
+        else:
+            content["left"] = ai_process_content(scene_content, "Summarize the first half in 5-7 words.")
+            content["right"] = ai_process_content(scene_content, "Summarize the second half in 5-7 words.")
     elif layout == "two_columns_image":
         content["image_caption"] = ai_process_content(scene_content, "Create a brief image caption (5-7 words) based on this text.")
         content["text"] = ai_process_content(scene_content, "Summarize the main point in 10-15 words for the text column.")
