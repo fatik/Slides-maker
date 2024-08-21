@@ -1,12 +1,11 @@
 import streamlit as st
 import re
 from transformers import pipeline, set_seed
-import openai
+from openai import OpenAI
 
 
-
-# Set up OpenAI API
-openai.api_key = st.secrets["openai_api_key"]
+# Set up OpenAI client
+client = OpenAI(api_key=st.secrets["openai_api_key"])
 
 @st.cache_resource
 def load_summarizer():
@@ -16,14 +15,14 @@ summarizer = load_summarizer()
 set_seed(42)
 
 def ai_process_content(text, instruction):
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text."},
             {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
         ]
     )
-    return response.choices[0].message['content'].strip()
+    return response.choices[0].message.content.strip()
 
 def select_layout(scene_content):
     if re.search(r'\d+', scene_content):
