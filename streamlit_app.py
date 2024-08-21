@@ -1,44 +1,69 @@
 import streamlit as st
 import re
 
-# Define simple slide layouts
+# Define slide layouts with more specific content requirements
 SLIDE_LAYOUTS = {
     "Title": {
-        "elements": ["title"]
+        "elements": ["title"],
+        "conditions": lambda s: len(s) <= 10 and s.endswith('!')
     },
     "Bullet Points": {
-        "elements": ["title", "bullets"]
+        "elements": ["title", "bullets"],
+        "conditions": lambda s: len(s.split('.')) >= 3
+    },
+    "Big Fact": {
+        "elements": ["fact", "explanation"],
+        "conditions": lambda s: any(word.isdigit() for word in s.split())
     },
     "Quote": {
-        "elements": ["quote", "attribution"]
+        "elements": ["quote", "attribution"],
+        "conditions": lambda s: '"' in s or 'said' in s.lower()
     },
-    "Image with Caption": {
-        "elements": ["image_placeholder", "caption"]
+    "Image Idea": {
+        "elements": ["image_description", "caption"],
+        "conditions": lambda s: 'looks' in s.lower() or 'appears' in s.lower() or 'image' in s.lower()
     },
     "Two Columns": {
-        "elements": ["left_column", "right_column"]
+        "elements": ["left_column", "right_column"],
+        "conditions": lambda s: 'versus' in s.lower() or 'compared to' in s.lower() or 'while' in s.lower()
     }
 }
 
 def clean_text(text):
-    # Remove extra whitespace and newlines
     return ' '.join(text.split())
 
 def split_into_sentences(text):
-    # Simple sentence splitting
-    return re.split(r'(?<=[.!?])\s+', clean_text(text))
+    return [s.strip() for s in re.split(r'(?<=[.!?])\s+', clean_text(text)) if s.strip()]
 
-def create_slide_content(sentences, layout):
+def select_layout(sentence, used_layouts):
+    for layout_name, layout in SLIDE_LAYOUTS.items():
+        if layout_name not in used_layouts and layout["conditions"](sentence):
+            return layout_name
+    return "Bullet Points"  # Default to bullet points if no other layout fits
+
+def create_slide_content(sentence, layout):
     content = {}
-    for element in layout["elements"]:
-        if sentences:
-            if element == "bullets":
-                content[element] = sentences[:3]  # Take up to 3 sentences for bullets
-                sentences = sentences[3:]
-            else:
-                content[element] = sentences.pop(0) if sentences else "N/A"
-        else:
-            content[element] = "N/A"
+    if layout == "Title":
+        content["title"] = sentence
+    elif layout == "Bullet Points":
+        content["title"] = sentence.split('.')[0]
+        content["bullets"] = [s.strip() for s in sentence.split('.')[1:] if s.strip()]
+    elif layout == "Big Fact":
+        parts = sentence.split(',', 1)
+        content["fact"] = parts[0]
+        content["explanation"] = parts[1] if len(parts) > 1 else ""
+    elif layout == "Quote":
+        parts = sentence.split('"')
+        content["quote"] = f'"{parts[1]}"' if len(parts) > 1 else sentence
+        content["attribution"] = parts[2].strip() if len(parts) > 2 else "Anonymous"
+    elif layout == "Image Idea":
+        parts = sentence.split(',', 1)
+        content["image_description"] = parts[0]
+        content["caption"] = parts[1] if len(parts) > 1 else ""
+    elif layout == "Two Columns":
+        parts = re.split(r'\sversus\s|\scompared to\s|\swhile\s', sentence, flags=re.IGNORECASE)
+        content["left_column"] = parts[0]
+        content["right_column"] = parts[1] if len(parts) > 1 else ""
     return content
 
 def render_slide(layout_name, content):
@@ -48,13 +73,13 @@ def render_slide(layout_name, content):
             slide += "Bullet Points:\n"
             for bullet in text:
                 slide += f"- {bullet}\n"
-        elif element == "image_placeholder":
-            slide += "[Image Placeholder]\n"
+        elif element == "image_description":
+            slide += f"[Image of: {text}]\n"
         else:
-            slide += f"{element.capitalize()}: {text}\n"
+            slide += f"{element.replace('_', ' ').capitalize()}: {text}\n"
     return slide
 
-st.title("Simple Slide Generator")
+st.title("Intelligent Slide Generator")
 
 input_text = st.text_area("Enter your script here:", height=200)
 
@@ -62,13 +87,17 @@ if st.button("Generate Slides"):
     if input_text:
         sentences = split_into_sentences(input_text)
         slides = []
+        used_layouts = set()
         
-        while sentences:
-            for layout_name, layout in SLIDE_LAYOUTS.items():
-                content = create_slide_content(sentences, layout)
-                slides.append((layout_name, content))
-                if not sentences:
-                    break
+        for sentence in sentences:
+            layout_name = select_layout(sentence, used_layouts)
+            content = create_slide_content(sentence, layout_name)
+            slides.append((layout_name, content))
+            used_layouts.add(layout_name)
+            
+            # Reset used_layouts if all layouts have been used
+            if len(used_layouts) == len(SLIDE_LAYOUTS):
+                used_layouts = set()
         
         for i, (layout_name, content) in enumerate(slides, 1):
             st.subheader(f"Slide {i}: {layout_name}")
@@ -78,6 +107,6 @@ if st.button("Generate Slides"):
 
 st.markdown("""
 ---
-This app generates simple slides based on your input text.
-It uses basic text processing and predefined layouts.
+This app generates slides based on your input text.
+It uses content analysis to select appropriate layouts and avoid repetitions.
 """)
