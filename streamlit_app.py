@@ -31,7 +31,7 @@ def ai_process_content(text, instruction, max_retries=5):
     data = {
         "model": "llama3-70b-8192",
         "messages": [
-            {"role": "system", "content": "Create concise slide content from video script text. No need to lay out any prefix like heres's the slide, here's the explanation, here's the summary etc. Never use quotation marks unless it's a direct quote. Keep the content direct and relevant to the slide, never exceeding the length of text provided. Never mention scene numbers in the content. Provide unique content for each bullet point. Do not include your own explanations, descriptions, or reasoning about your output. Your output MUST be direct, which means no explanation or getting me ready for the output. Avoid giving prembles such as here's your output, or what the output is about. If the slide has 1-8 words and you don't have context about it or it can't be summarized further then return the original text. Your job is to supplement the narration or subtitles, not be alternative. For two-column slides, ensure the content is distinct for each column. Use bullets layout where there are multiple and many points. No meta content, what it means is no classification of the output you are making for example no need to mention if the content is a welcome message or ending note or such"},
+            {"role": "system", "content": "Create concise slide content from video script text. No need to lay out any prefix like here's the slide, here's the explanation, here's the summary etc. Never use quotation marks unless it's a direct quote. Keep the content direct and relevant to the slide, never exceeding the length of text provided. Never mention scene numbers in the content. Provide unique content for each bullet point. Do not include your own explanations, descriptions, or reasoning about your output. Your output MUST be direct, which means no explanation or getting me ready for the output. Avoid giving preambles such as here's your output, or what the output is about. If the slide has 1-8 words and you don't have context about it or it can't be summarized further then return the original text. Your job is to supplement the narration or subtitles, not be alternative. For two-column slides, ensure the content is distinct for each column. Use bullets layout where there are multiple and many points. No meta content, what it means is no classification of the output you are making for example no need to mention if the content is a welcome message or ending note or such"},
             {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
         ]
     }
@@ -89,7 +89,8 @@ def process_scene(scene_number, scene_content):
         content["text"] = ai_process_content(scene_content, "Extract the key idea in 3-5 words.")
     elif layout == "bullet_points":
         content["title"] = ai_process_content(scene_content, "Create a short title (3-5 words).")
-        content["bullets"] = [ai_process_content(scene_content, f"Extract unique key point {i} (5-9 words). Ensure each point is distinct.") for i in range(1, 5)]
+        bullet_content = ai_process_content(scene_content, "Extract 3 key points (7-10 words each). Format as a list with each point on a new line, prefixed with a bullet point (•).")
+        content["bullets"] = bullet_content.split('\n')  # Split the bullet points into a list
     elif layout == "two_columns":
         split_content = re.split(r'\s+but\s+|\s+versus\s+|\s+compared\s+to\s+', scene_content, flags=re.IGNORECASE)
         if len(split_content) > 1:
@@ -148,14 +149,7 @@ def create_slide(layout, content, width=800, height=600):
     elif layout == "bullet_points":
         d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
         
-        # Split the bullet points if they're in a single string
-        if isinstance(content['bullets'], str):
-            bullets = content['bullets'].split('•')
-            bullets = [bullet.strip() for bullet in bullets if bullet.strip()]
-        else:
-            bullets = content['bullets']
-        
-        # Calculate spacing between bullets
+        bullets = content['bullets']
         available_height = height - 150  # Subtracting space for title and margins
         bullet_spacing = available_height // (len(bullets) + 1)
         
@@ -164,7 +158,7 @@ def create_slide(layout, content, width=800, height=600):
             wrapped_bullet = textwrap.wrap(bullet, width=40)
             for j, line in enumerate(wrapped_bullet):
                 if j == 0:
-                    d.text((50, y_position), f"• {line}", font=font, fill="black")
+                    d.text((50, y_position), line, font=font, fill="black")
                 else:
                     d.text((70, y_position), line, font=font, fill="black")
                 y_position += 30
