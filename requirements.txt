@@ -1,1 +1,5 @@
 streamlit
+transformers
+torch
+scikit-learn
+numpy

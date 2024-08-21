@@ -1,166 +1,130 @@
 import streamlit as st
 import re
-import random
+import numpy as np
+from sklearn.cluster import KMeans
+from transformers import AutoTokenizer, AutoModel, pipeline
+import torch
 
-# Define more sophisticated slide layouts
+# Load models
+@st.cache_resource
+def load_models():
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    model = AutoModel.from_pretrained("bert-base-uncased")
+    summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+    return tokenizer, model, summarizer
+
+tokenizer, model, summarizer = load_models()
+
+# Define slide layouts
 SLIDE_LAYOUTS = {
-    "Title": {
-        "elements": ["title"],
-        "conditions": lambda s: len(s.split()) <= 10 and any(s.endswith(char) for char in "!?")
-    },
-    "Bullet Points": {
-        "elements": ["title", "bullets"],
-        "conditions": lambda s: len(s.split('.')) >= 3
-    },
-    "Big Fact": {
-        "elements": ["fact", "explanation"],
-        "conditions": lambda s: re.search(r'\d+', s) and len(s.split(',')) > 1
-    },
-    "Quote": {
-        "elements": ["quote", "attribution"],
-        "conditions": lambda s: '"' in s or "'" in s
-    },
-    "Image Idea": {
-        "elements": ["image_description", "caption"],
-        "conditions": lambda s: any(word in s.lower() for word in ['look', 'appear', 'image', 'picture', 'photo'])
-    },
-    "Two Columns": {
-        "elements": ["left_column", "right_column"],
-        "conditions": lambda s: any(word in s.lower() for word in ['versus', 'compared to', 'while', 'on the other hand'])
-    },
-    "Process": {
-        "elements": ["title", "steps"],
-        "conditions": lambda s: any(word in s.lower() for word in ['first', 'then', 'finally', 'lastly', 'step'])
-    },
-    "Comparison": {
-        "elements": ["title", "item1", "item2"],
-        "conditions": lambda s: 'more' in s.lower() or 'less' in s.lower() or 'than' in s.lower()
-    },
-    "Definition": {
-        "elements": ["term", "definition"],
-        "conditions": lambda s: 'is a' in s.lower() or 'are' in s.lower() or 'refers to' in s.lower()
-    },
-    "Statistic": {
-        "elements": ["number", "context"],
-        "conditions": lambda s: re.search(r'\d+%|\d+\s*(?:kg|lbs?|tons?)', s)
-    }
+    "Title": {"elements": ["title"]},
+    "Bullet Points": {"elements": ["title", "bullets"]},
+    "Big Fact": {"elements": ["fact", "explanation"]},
+    "Quote": {"elements": ["quote", "attribution"]},
+    "Image Idea": {"elements": ["image_description", "caption"]},
+    "Two Columns": {"elements": ["left_column", "right_column"]},
+    "Statistic": {"elements": ["number", "context"]}
 }
 
-def clean_text(text):
-    return ' '.join(text.split())
+def get_bert_embedding(text):
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512, padding=True)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    return outputs.last_hidden_state.mean(dim=1).squeeze().numpy()
 
-def split_into_sentences(text):
-    return [s.strip() for s in re.split(r'(?<=[.!?])\s+', clean_text(text)) if s.strip()]
+def cluster_sentences(sentences, n_clusters=10):
+    embeddings = np.array([get_bert_embedding(sent) for sent in sentences])
+    kmeans = KMeans(n_clusters=min(n_clusters, len(sentences)), random_state=42)
+    return kmeans.fit_predict(embeddings)
 
-def select_layout(sentence, used_layouts):
-    suitable_layouts = [name for name, layout in SLIDE_LAYOUTS.items() if layout["conditions"](sentence)]
-    if suitable_layouts:
-        # Prefer layouts that haven't been used recently
-        for layout in suitable_layouts:
-            if layout not in used_layouts[-3:]:
-                return layout
-        return random.choice(suitable_layouts)
-    return "Bullet Points"  # Default to bullet points if no other layout fits
+def summarize_text(text, max_length=30):
+    summary = summarizer(text, max_length=max_length, min_length=10, do_sample=False)[0]['summary_text']
+    return summary
 
-def create_slide_content(sentence, layout):
-    content = {}
+def select_layout(content):
+    if '"' in content:
+        return "Quote"
+    elif re.search(r'\d+%|\d+\s*(?:kg|lbs?|tons?)', content):
+        return "Statistic"
+    elif len(content.split()) > 20:
+        return "Bullet Points"
+    elif "looks like" in content.lower() or "appears" in content.lower():
+        return "Image Idea"
+    elif "versus" in content.lower() or "compared to" in content.lower():
+        return "Two Columns"
+    else:
+        return "Big Fact"
+
+def create_slide_content(content, layout):
     if layout == "Title":
-        content["title"] = sentence
+        return {"title": summarize_text(content, max_length=10)}
     elif layout == "Bullet Points":
-        parts = sentence.split('.')
-        content["title"] = parts[0]
-        content["bullets"] = [p.strip() for p in parts[1:] if p.strip()]
+        title = summarize_text(content, max_length=10)
+        bullets = [s.strip() for s in content.split('.') if s.strip()]
+        return {"title": title, "bullets": bullets[:3]}  # Limit to 3 bullets
     elif layout == "Big Fact":
-        parts = sentence.split(',', 1)
-        content["fact"] = parts[0]
-        content["explanation"] = parts[1] if len(parts) > 1 else ""
+        parts = content.split(',', 1)
+        return {"fact": summarize_text(parts[0], max_length=15), 
+                "explanation": summarize_text(parts[1], max_length=20) if len(parts) > 1 else ""}
     elif layout == "Quote":
-        match = re.search(r'"([^"]*)"', sentence)
-        if match:
-            content["quote"] = match.group(1)
-            content["attribution"] = sentence.split('"')[-1].strip()
-        else:
-            content["quote"] = sentence
-            content["attribution"] = "Anonymous"
+        match = re.search(r'"([^"]*)"', content)
+        quote = match.group(1) if match else content
+        attribution = content.split('"')[-1].strip() if match else "Anonymous"
+        return {"quote": summarize_text(quote, max_length=20), "attribution": attribution}
     elif layout == "Image Idea":
-        parts = sentence.split(',', 1)
-        content["image_description"] = parts[0]
-        content["caption"] = parts[1] if len(parts) > 1 else ""
+        parts = content.split(',', 1)
+        return {"image_description": summarize_text(parts[0], max_length=15), 
+                "caption": summarize_text(parts[1], max_length=20) if len(parts) > 1 else ""}
     elif layout == "Two Columns":
-        for split_word in ['versus', 'compared to', 'while', 'on the other hand']:
-            if split_word in sentence.lower():
-                parts = sentence.lower().split(split_word)
-                content["left_column"] = parts[0].strip()
-                content["right_column"] = parts[1].strip()
-                break
-        if "left_column" not in content:
-            parts = sentence.split(',', 1)
-            content["left_column"] = parts[0]
-            content["right_column"] = parts[1] if len(parts) > 1 else ""
-    elif layout == "Process":
-        parts = sentence.split(',')
-        content["title"] = parts[0]
-        content["steps"] = [p.strip() for p in parts[1:] if p.strip()]
-    elif layout == "Comparison":
-        match = re.search(r'(.*)\s(?:is|are)\s(more|less)\s(.*)\sthan\s(.*)', sentence, re.IGNORECASE)
-        if match:
-            content["title"] = f"Comparing {match.group(1)} and {match.group(4)}"
-            content["item1"] = f"{match.group(1)}: {match.group(2)} {match.group(3)}"
-            content["item2"] = match.group(4)
-        else:
-            parts = sentence.split(',')
-            content["title"] = "Comparison"
-            content["item1"] = parts[0]
-            content["item2"] = parts[1] if len(parts) > 1 else ""
-    elif layout == "Definition":
-        parts = re.split(r'\sis\s|\sare\s|\srefers to\s', sentence, 1, re.IGNORECASE)
-        content["term"] = parts[0]
-        content["definition"] = parts[1] if len(parts) > 1 else ""
+        parts = re.split(r'\sversus\s|\scompared to\s', content, flags=re.IGNORECASE)
+        return {"left_column": summarize_text(parts[0], max_length=15), 
+                "right_column": summarize_text(parts[1], max_length=15) if len(parts) > 1 else ""}
     elif layout == "Statistic":
-        match = re.search(r'(\d+(?:%|\s*(?:kg|lbs?|tons?)))', sentence)
+        match = re.search(r'(\d+(?:%|\s*(?:kg|lbs?|tons?)))', content)
         if match:
-            content["number"] = match.group(1)
-            content["context"] = sentence.replace(match.group(1), '___')
+            number = match.group(1)
+            context = summarize_text(content.replace(number, '___'), max_length=20)
+            return {"number": number, "context": context}
         else:
-            content["number"] = "N/A"
-            content["context"] = sentence
-    return content
+            return {"number": "N/A", "context": summarize_text(content, max_length=20)}
 
-def render_slide(layout_name, content):
-    slide = f"[Slide: {layout_name}]\n"
-    for element, text in content.items():
-        if isinstance(text, list):
-            slide += f"{element.replace('_', ' ').capitalize()}:\n"
-            for item in text:
+def render_slide(layout, content):
+    slide = f"[Slide: {layout}]\n"
+    for key, value in content.items():
+        if isinstance(value, list):
+            slide += f"{key.capitalize()}:\n"
+            for item in value:
                 slide += f"- {item}\n"
         else:
-            slide += f"{element.replace('_', ' ').capitalize()}: {text}\n"
+            slide += f"{key.capitalize()}: {value}\n"
     return slide
 
-st.title("Advanced Intelligent Slide Generator")
+st.title("Advanced NLP-based Slide Generator")
 
 input_text = st.text_area("Enter your script here:", height=200)
 
 if st.button("Generate Slides"):
     if input_text:
-        sentences = split_into_sentences(input_text)
-        slides = []
-        used_layouts = []
-        
-        for sentence in sentences:
-            layout_name = select_layout(sentence, used_layouts)
-            content = create_slide_content(sentence, layout_name)
-            slides.append((layout_name, content))
-            used_layouts.append(layout_name)
-        
-        for i, (layout_name, content) in enumerate(slides, 1):
-            st.subheader(f"Slide {i}: {layout_name}")
-            st.code(render_slide(layout_name, content))
+        with st.spinner("Analyzing content and generating slides..."):
+            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', input_text) if s.strip()]
+            clusters = cluster_sentences(sentences)
+            
+            slides = []
+            for cluster_id in range(max(clusters) + 1):
+                cluster_sentences = [sent for i, sent in enumerate(sentences) if clusters[i] == cluster_id]
+                cluster_text = ' '.join(cluster_sentences)
+                layout = select_layout(cluster_text)
+                content = create_slide_content(cluster_text, layout)
+                slides.append((layout, content))
+            
+            for i, (layout, content) in enumerate(slides, 1):
+                st.subheader(f"Slide {i}: {layout}")
+                st.code(render_slide(layout, content))
     else:
         st.warning("Please enter some text to generate slides.")
 
 st.markdown("""
 ---
-This app generates slides based on your input text.
-It uses advanced content analysis to select appropriate layouts and ensure variety.
+This app uses advanced NLP techniques to analyze your input and generate appropriate slides.
+It uses BERT for text embedding, clustering for coherent slide grouping, and extractive summarization for content.
 """)
