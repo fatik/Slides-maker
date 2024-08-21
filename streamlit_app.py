@@ -1,6 +1,6 @@
 import streamlit as st
 import re
-from transformers import pipeline
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
 # Define slide layouts
 SLIDE_LAYOUTS = {
@@ -16,11 +16,15 @@ SLIDE_LAYOUTS = {
     "blank": {"name": "Blank Layout", "elements": []}
 }
 
+
 @st.cache_resource
 def load_summarizer():
-    return pipeline("summarization", model="facebook/bart-large-cnn")
+    model_name = "facebook/bart-base"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    return model, tokenizer
 
-summarizer = load_summarizer()
+model, tokenizer = load_summarizer()
 
 def select_layout(scene_content):
     if re.search(r'\d+', scene_content):
@@ -39,7 +43,13 @@ def select_layout(scene_content):
         return "single_text_box"
 
 def summarize_content(text, max_words):
-    summary = summarizer(text, max_length=max_words, min_length=1, do_sample=False)[0]['summary_text']
+    input_length = len(text.split())
+    if input_length <= max_words:
+        return text
+    
+    inputs = tokenizer(text, return_tensors="pt", max_length=512, truncation=True)
+    summary_ids = model.generate(inputs["input_ids"], max_length=max_words, min_length=1, length_penalty=2.0, num_beams=4, early_stopping=True)
+    summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
     return ' '.join(summary.split()[:max_words])
 
 def process_scene(scene_number, scene_content):
@@ -67,10 +77,11 @@ def process_scene(scene_number, scene_content):
     return f"Scene {scene_number}: layout: {layout}, content: {content}"
 
 def process_script(script):
-    scenes = re.split(r'\nScene \d+\n', script)[1:]
+    scenes = re.split(r'Scene \d+', script)
+    scenes = [scene.strip() for scene in scenes if scene.strip()]
     results = []
     for i, scene in enumerate(scenes, 1):
-        results.append(process_scene(i, scene.strip()))
+        results.append(process_scene(i, scene))
     return results
 
 st.title("Scene-Based Slide Generator")
