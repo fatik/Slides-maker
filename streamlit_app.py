@@ -6,7 +6,7 @@ import openai
 
 
 # Set up OpenAI API
-openai.api_key = st.secrets["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"]
+openai.api_key = st.secrets["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"]
 
 @st.cache_resource
 def load_summarizer():
