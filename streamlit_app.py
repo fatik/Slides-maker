@@ -6,6 +6,7 @@ import random
 from transformers import pipeline, set_seed
 from PIL import Image, ImageDraw, ImageFont
 import io
+import textwrap
 
 # Suppress warnings
 import warnings
@@ -30,7 +31,7 @@ def ai_process_content(text, instruction, max_retries=5):
     data = {
         "model": "mixtral-8x7b-32768",
         "messages": [
-            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text. Never provide multiple options or use quotation marks unless it's a direct quote."},
+            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text. Never provide multiple options or use quotation marks unless it's a direct quote. Always provide unique content for each point."},
             {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
         ]
     }
@@ -64,7 +65,7 @@ def process_scene(scene_number, scene_content):
     elif layout == "bullet_points":
         content = {
             "title": ai_process_content(scene_content, "Create a short title (3-5 words) for a bullet point slide."),
-            "bullets": [ai_process_content(scene_content, f"Extract key point {i} (5-7 words) for a bullet on the slide.") for i in range(1, 4)]
+            "bullets": [ai_process_content(scene_content, f"Extract unique key point {i} (5-7 words) for a bullet on the slide.") for i in range(1, 4)]
         }
     elif layout == "blank":
         content = {"text": ""}
@@ -81,7 +82,7 @@ def process_scene(scene_number, scene_content):
     elif layout == "timeline":
         content = {
             "title": ai_process_content(scene_content, "Create a short title (3-5 words) for a timeline slide."),
-            "events": [ai_process_content(scene_content, f"Extract timeline event {i} (5-7 words).") for i in range(1, 4)]
+            "events": [ai_process_content(scene_content, f"Extract unique timeline event {i} (5-7 words).") for i in range(1, 4)]
         }
     elif layout == "comparison":
         content = {
@@ -112,10 +113,18 @@ def create_slide(layout, content, width=800, height=600):
     d.rectangle([10, 10, width-10, height-10], outline="black")
 
     if layout == "left_aligned":
-        d.text((50, height//2), content['text'], font=font, fill="black", anchor="lm")
+        wrapped_text = textwrap.wrap(content['text'], width=40)
+        y_text = height // 2 - len(wrapped_text) * 15
+        for line in wrapped_text:
+            d.text((50, y_text), line, font=font, fill="black")
+            y_text += 30
 
     elif layout == "big_center":
-        d.text((width//2, height//2), content['text'], font=big_font, fill="black", anchor="mm")
+        wrapped_text = textwrap.wrap(content['text'], width=20)
+        y_text = height // 2 - len(wrapped_text) * 30
+        for line in wrapped_text:
+            d.text((width//2, y_text), line, font=big_font, fill="black", anchor="mm")
+            y_text += 60
 
     elif layout == "bullet_points":
         d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
@@ -127,14 +136,26 @@ def create_slide(layout, content, width=800, height=600):
 
     elif layout == "two_columns":
         d.line([(width//2, 50), (width//2, height-50)], fill="black")
-        d.text((width//4, height//2), content['left'], font=font, fill="black", anchor="mm")
-        d.text((3*width//4, height//2), content['right'], font=font, fill="black", anchor="mm")
+        wrapped_left = textwrap.wrap(content['left'], width=20)
+        wrapped_right = textwrap.wrap(content['right'], width=20)
+        y_left = height // 2 - len(wrapped_left) * 15
+        y_right = height // 2 - len(wrapped_right) * 15
+        for line in wrapped_left:
+            d.text((width//4, y_left), line, font=font, fill="black", anchor="mm")
+            y_left += 30
+        for line in wrapped_right:
+            d.text((3*width//4, y_right), line, font=font, fill="black", anchor="mm")
+            y_right += 30
 
     elif layout == "two_columns_image":
         d.line([(width//2, 50), (width//2, height-50)], fill="black")
         d.rectangle([50, 50, width//2-50, height-150], outline="black")
         d.text((width//4, height-75), content['image_caption'], font=font, fill="black", anchor="mm")
-        d.text((3*width//4, height//2), content['text'], font=font, fill="black", anchor="mm")
+        wrapped_text = textwrap.wrap(content['text'], width=20)
+        y_text = height // 2 - len(wrapped_text) * 15
+        for line in wrapped_text:
+            d.text((3*width//4, y_text), line, font=font, fill="black", anchor="mm")
+            y_text += 30
 
     elif layout == "timeline":
         d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
@@ -142,13 +163,25 @@ def create_slide(layout, content, width=800, height=600):
         for i, event in enumerate(content['events']):
             x = 50 + (i * (width-100) // (len(content['events'])-1))
             d.line([(x, height//2-10), (x, height//2+10)], fill="black")
-            d.text((x, height//2+30), event, font=font, fill="black", anchor="mt")
+            wrapped_event = textwrap.wrap(event, width=10)
+            y_event = height//2 + 30
+            for line in wrapped_event:
+                d.text((x, y_event), line, font=font, fill="black", anchor="mt")
+                y_event += 20
 
     elif layout == "comparison":
         d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
         d.line([(width//2, 100), (width//2, height-50)], fill="black")
-        d.text((width//4, height//2), content['left'], font=font, fill="black", anchor="mm")
-        d.text((3*width//4, height//2), content['right'], font=font, fill="black", anchor="mm")
+        wrapped_left = textwrap.wrap(content['left'], width=15)
+        wrapped_right = textwrap.wrap(content['right'], width=15)
+        y_left = height // 2 - len(wrapped_left) * 15
+        y_right = height // 2 - len(wrapped_right) * 15
+        for line in wrapped_left:
+            d.text((width//4, y_left), line, font=font, fill="black", anchor="mm")
+            y_left += 30
+        for line in wrapped_right:
+            d.text((3*width//4, y_right), line, font=font, fill="black", anchor="mm")
+            y_right += 30
 
     return img
 
