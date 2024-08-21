@@ -1,9 +1,9 @@
 import streamlit as st
 import re
-from transformers import pipeline
-import torch
+from collections import defaultdict
+import numpy as np
 
-# Define all 20 slide layouts
+# Define slide layouts
 SLIDE_LAYOUTS = {
     "3HP": {
         "name": "Three Horizontal Points",
@@ -109,21 +109,54 @@ SLIDE_LAYOUTS = {
     }
 }
 
-@st.cache_resource
-def load_pipeline():
-    return pipeline("summarization", model="facebook/bart-large-cnn", device=0 if torch.cuda.is_available() else -1)
-
-summarizer = load_pipeline()
-
 def clean_text(text):
     return ' '.join(text.split())
 
 def split_into_sentences(text):
     return [s.strip() for s in re.split(r'(?<=[.!?])\s+', clean_text(text)) if s.strip()]
 
-def summarize_text(text, max_length=30):
-    summary = summarizer(text, max_length=max_length, min_length=10, do_sample=False)[0]['summary_text']
-    return summary
+def calculate_sentence_scores(sentences):
+    word_freq = defaultdict(int)
+    for sentence in sentences:
+        for word in sentence.lower().split():
+            word_freq[word] += 1
+    
+    max_freq = max(word_freq.values())
+    for word in word_freq.keys():
+        word_freq[word] = word_freq[word] / max_freq
+
+    sentence_scores = []
+    for sentence in sentences:
+        score = sum([word_freq[word] for word in sentence.lower().split()])
+        sentence_scores.append(score)
+    
+    return sentence_scores
+
+def smart_summarize(text, max_words):
+    sentences = split_into_sentences(text)
+    if not sentences:
+        return ""
+    
+    if len(sentences) == 1:
+        return ' '.join(sentences[0].split()[:max_words])
+    
+    sentence_scores = calculate_sentence_scores(sentences)
+    
+    sorted_sentences = [x for _, x in sorted(zip(sentence_scores, sentences), reverse=True)]
+    
+    summary = []
+    word_count = 0
+    for sentence in sorted_sentences:
+        words = sentence.split()
+        if word_count + len(words) <= max_words:
+            summary.append(sentence)
+            word_count += len(words)
+        else:
+            remaining_words = max_words - word_count
+            summary.append(' '.join(words[:remaining_words]))
+            break
+    
+    return ' '.join(summary)
 
 def select_layout(content, used_layouts):
     if "?" in content and "BQ" not in used_layouts:
@@ -172,14 +205,14 @@ def select_layout(content, used_layouts):
 def create_slide_content(content, layout_key):
     layout = SLIDE_LAYOUTS[layout_key]
     slide_content = {}
-    sentences = split_into_sentences(content)
     
-    for i, element in enumerate(layout["elements"]):
+    for element in layout["elements"]:
         if element.startswith("image") or element.startswith("chart"):
             slide_content[element] = f"[{element.replace('_', ' ').title()}]"
         else:
-            text = sentences[i] if i < len(sentences) else ""
-            slide_content[element] = summarize_text(text, layout["max_chars"][element])
+            max_chars = layout["max_chars"][element]
+            max_words = max(1, max_chars // 5)  # Assume average word length of 5 characters
+            slide_content[element] = smart_summarize(content, max_words)
     
     return slide_content
 
@@ -190,7 +223,7 @@ def render_slide(layout_key, content):
         slide += f"{element}: {content.get(element, 'N/A')}\n"
     return slide
 
-st.title("Full Custom Layout Slide Generator")
+st.title("Smart and Efficient Slide Generator")
 
 input_text = st.text_area("Enter your script here:", height=200)
 
@@ -201,9 +234,10 @@ if st.button("Generate Slides"):
             slides = []
             used_layouts = set()
             
-            for sentence in sentences:
-                layout_key = select_layout(sentence, used_layouts)
-                content = create_slide_content(sentence, layout_key)
+            for i in range(0, len(sentences), 3):  # Process 3 sentences at a time
+                chunk = ' '.join(sentences[i:i+3])
+                layout_key = select_layout(chunk, used_layouts)
+                content = create_slide_content(chunk, layout_key)
                 slides.append((layout_key, content))
                 used_layouts.add(layout_key)
                 
@@ -218,6 +252,6 @@ if st.button("Generate Slides"):
 
 st.markdown("""
 ---
-This app uses the BART model to analyze your input and generate slides based on 20 custom layouts.
+This app uses a smart and efficient summarization technique to analyze your input and generate appropriate slides.
 It selects layouts based on content type and summarizes content to fit slide constraints.
 """)
