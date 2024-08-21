@@ -1,16 +1,6 @@
 import streamlit as st
 import re
 from collections import Counter
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize, sent_tokenize
-
-# Download necessary NLTK data
-nltk.download('punkt', quiet=True)
-nltk.download('stopwords', quiet=True)
-
-# Define slide layouts (keep the SLIDE_LAYOUTS dictionary as it was)
-
 # Define slide layouts
 SLIDE_LAYOUTS = {
     "single_text_box": {"name": "Single Text Box", "elements": [{"type": "text", "max_words": 30, "style": "centered"}]},
@@ -26,13 +16,14 @@ SLIDE_LAYOUTS = {
 }
 
 
+# Define slide layouts (keep the SLIDE_LAYOUTS dictionary as it was)
 
 def preprocess_text(text):
-    # Tokenize the text
-    words = word_tokenize(text.lower())
-    # Remove stopwords and punctuation
-    stop_words = set(stopwords.words('english'))
-    words = [word for word in words if word.isalnum() and word not in stop_words]
+    # Convert to lowercase and split into words
+    words = text.lower().split()
+    # Remove common words and short words
+    stop_words = set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'])
+    words = [word for word in words if word not in stop_words and len(word) > 2]
     return words
 
 def extract_key_phrases(text, max_words):
@@ -70,13 +61,13 @@ def process_scene(scene_number, scene_content):
     elif layout in ["centered_square", "single_text_box"]:
         content = {"text": extract_key_phrases(scene_content, 30)}
     elif layout == "title_subtitle":
-        sentences = sent_tokenize(scene_content)
+        sentences = re.split(r'[.!?]+', scene_content)
         content = {
             "title": extract_key_phrases(sentences[0], 5),
             "subtitle": extract_key_phrases(' '.join(sentences[1:]), 15) if len(sentences) > 1 else ""
         }
     elif layout == "bullet_points":
-        sentences = sent_tokenize(scene_content)
+        sentences = re.split(r'[.!?]+', scene_content)
         content = {
             "title": extract_key_phrases(sentences[0], 5),
             "bullets": [extract_key_phrases(s, 8) for s in sentences[1:5]]
