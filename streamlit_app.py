@@ -31,7 +31,7 @@ def ai_process_content(text, instruction, max_retries=5):
     data = {
         "model": "mixtral-8x7b-32768",
         "messages": [
-            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text. Never use quotation marks unless it's a direct quote. Keep the content direct and relevant to the slide. For single facts or points, don't create multiple bullets. Never mention 'Scene' or scene numbers in the content. Provide unique content for each bullet point."},
+            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text. Never use quotation marks unless it's a direct quote. Keep the content direct and relevant to the slide, not exceeding the length of input. For single facts or points, don't use slide with bullets. Never mention scene numbers in the content. Provide unique content for each bullet point. Do not include your own prompts or descriptions or explain yourself why you did what you did."},
             {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
         ]
     }
@@ -51,11 +51,13 @@ def break_into_scenes(script):
     scenes = []
     sentences = re.split(r'(?<=[.!?])\s+', script)
     for i, sentence in enumerate(sentences, 1):
-        scenes.append(f"Scene {i} {sentence.strip()}")
+        scenes.append(f"S#{i}: {sentence.strip()}")
     return scenes
 
 def select_layout(scene_content):
-    if re.search(r'\d+\s*(?:kg|lbs?|pounds?|pizzas?)', scene_content, re.IGNORECASE):
+    if not scene_content.strip():
+        return "blank"
+    elif re.search(r'\d+\s*(?:kg|lbs?|pounds?|pizzas?)', scene_content, re.IGNORECASE):
         return "large_number"
     elif "!" in scene_content or len(scene_content.split()) <= 10:
         return "big_center"
@@ -73,47 +75,38 @@ def select_layout(scene_content):
         return "left_aligned"
 
 def process_scene(scene_number, scene_content):
-    if not scene_content.strip():
-        return f"Scene {scene_number}: layout: blank, content: {{'subtitle': ''}}"
+    # Remove the scene number from the content
+    scene_content = re.sub(r'^S#\d+:\s*', '', scene_content)
 
     layout = select_layout(scene_content)
-    content = {}
+    content = {"subtitle": scene_content}
+
+    if layout == "blank":
+        return f"S#{scene_number}: layout: blank, content: {content}"
     
     if layout == "left_aligned":
-        content = {"text": ai_process_content(scene_content, "Extract the key idea in 10-15 words for a left-aligned slide. Do not include any explanatory comments or mention of scenes.")}
+        content["text"] = ai_process_content(scene_content, "Extract the key idea in 10-15 words for a left-aligned slide.")
     elif layout == "big_center":
-        content = {"text": ai_process_content(scene_content, "Extract the key idea in 3-5 words for a big, centered slide. Do not mention scenes.")}
+        content["text"] = ai_process_content(scene_content, "Extract the key idea in 3-5 words for a big, centered slide.")
     elif layout == "bullet_points":
-        content = {
-            "title": ai_process_content(scene_content, "Create a short title (3-5 words) for a bullet point slide. Do not mention scenes."),
-            "bullets": [ai_process_content(scene_content, f"Extract unique key point {i} (5-7 words) for a bullet on the slide. Ensure each point is distinct.") for i in range(1, 4)]
-        }
+        content["title"] = ai_process_content(scene_content, "Create a short title (3-5 words) for a bullet point slide.")
+        content["bullets"] = [ai_process_content(scene_content, f"Extract unique key point {i} (5-9 words) for a bullet on the slide. Ensure each point is distinct.") for i in range(1, 4)]
     elif layout == "two_columns":
-        content = {
-            "left": ai_process_content(scene_content, "Summarize the first half of the content in 10-15 words for the left column. Do not include any prompts or descriptions."),
-            "right": ai_process_content(scene_content, "Summarize the second half of the content in 10-15 words for the right column. Do not include any prompts or descriptions.")
-        }
+        content["left"] = ai_process_content(scene_content, "Summarize the first half of the content in 5-15 words for the left column.")
+        content["right"] = ai_process_content(scene_content, "Summarize the second half of the content in 5-15 words for the right column.")
     elif layout == "two_columns_image":
-        content = {
-            "image_caption": ai_process_content(scene_content, "Create a brief image caption (5-7 words) based on this text."),
-            "text": ai_process_content(scene_content, "Summarize the main point in 10-15 words for the text column.")
-        }
+        content["image_caption"] = ai_process_content(scene_content, "Create a brief image caption (5-7 words) based on this text.")
+        content["text"] = ai_process_content(scene_content, "Summarize the main point in 10-15 words for the text column.")
     elif layout == "comparison":
-        content = {
-            "title": ai_process_content(scene_content, "Create a short title (3-5 words) for a comparison slide."),
-            "left": ai_process_content(scene_content, "Summarize the first item in 5-7 words."),
-            "right": ai_process_content(scene_content, "Summarize the second item in 5-7 words.")
-        }
+        content["title"] = ai_process_content(scene_content, "Create a short title (3-5 words) for a comparison slide.")
+        content["left"] = ai_process_content(scene_content, "Summarize the first item in 5-7 words.")
+        content["right"] = ai_process_content(scene_content, "Summarize the second item in 5-7 words.")
     elif layout == "large_number":
         number = re.search(r'\d+', scene_content)
-        number = number.group() if number else ""
-        content = {
-            "number": number,
-            "caption": ai_process_content(scene_content, "Generate a brief caption (max 10 words) to accompany this number on a slide.")
-        }
+        content["number"] = number.group() if number else ""
+        content["caption"] = ai_process_content(scene_content, "Generate a brief caption (max 10 words) to accompany this number on a slide.")
     
-    content["subtitle"] = ' '.join(scene_content.split()[2:])  # Add original scene text as subtitle
-    return f"Scene {scene_number}: layout: {layout}, content: {content}"
+    return f"S#{scene_number}: layout: {layout}, content: {content}"
 
 def process_script(scenes):
     results = []
@@ -133,25 +126,24 @@ def create_slide(layout, content, width=800, height=600):
     # Draw slide border
     d.rectangle([10, 10, width-10, height-10], outline="black")
 
-    if layout == "left_aligned":
+    if layout == "blank":
+        pass  # Leave the slide blank except for the subtitle
+    elif layout == "left_aligned":
         wrapped_text = textwrap.wrap(content['text'], width=40)
         y_text = height // 2 - len(wrapped_text) * 15
         for line in wrapped_text:
             d.text((50, y_text), line, font=font, fill="black")
             y_text += 30
-
     elif layout == "big_center":
         wrapped_text = textwrap.wrap(content['text'], width=20)
         y_text = height // 2 - len(wrapped_text) * 30
         for line in wrapped_text:
             d.text((width//2, y_text), line, font=big_font, fill="black", anchor="mm")
             y_text += 60
-
     elif layout == "bullet_points":
         d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
         for i, bullet in enumerate(content['bullets'], 1):
             d.text((50, 100 + i*50), f"• {bullet}", font=font, fill="black")
-
     elif layout == "two_columns":
         d.line([(width//2, 50), (width//2, height-50)], fill="black")
         wrapped_left = textwrap.wrap(content['left'], width=20)
@@ -164,7 +156,6 @@ def create_slide(layout, content, width=800, height=600):
         for line in wrapped_right:
             d.text((3*width//4, y_right), line, font=font, fill="black", anchor="mm")
             y_right += 30
-
     elif layout == "two_columns_image":
         d.line([(width//2, 50), (width//2, height-50)], fill="black")
         d.rectangle([50, 50, width//2-50, height-150], outline="black")
@@ -174,7 +165,6 @@ def create_slide(layout, content, width=800, height=600):
         for line in wrapped_text:
             d.text((3*width//4, y_text), line, font=font, fill="black", anchor="mm")
             y_text += 30
-
     elif layout == "comparison":
         d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
         d.line([(width//2, 100), (width//2, height-50)], fill="black")
@@ -188,7 +178,6 @@ def create_slide(layout, content, width=800, height=600):
         for line in wrapped_right:
             d.text((3*width//4, y_right), line, font=font, fill="black", anchor="mm")
             y_right += 30
-
     elif layout == "large_number":
         d.text((width//2, height//3), content['number'], font=big_font, fill="black", anchor="mm")
         wrapped_caption = textwrap.wrap(content['caption'], width=30)
@@ -207,7 +196,7 @@ def create_slide(layout, content, width=800, height=600):
     return img
 
 def parse_scene(scene_text):
-    match = re.match(r"Scene (\d+): layout: (\w+), content: (.+)", scene_text)
+    match = re.match(r"S#(\d+): layout: (\w+), content: (.+)", scene_text)
     if match:
         scene_num, layout, content = match.groups()
         content = eval(content)  # Be cautious with eval in production!
@@ -242,7 +231,7 @@ if st.button("Generate Slides and Wireframes"):
                     slide_image.save(buf, format='PNG')
                     byte_im = buf.getvalue()
 
-                    st.image(byte_im, caption=f"Wireframe for Scene {scene_num}")
+                    st.image(byte_im, caption=f"Wireframe for S#{scene_num}")
                     st.markdown("---")
     else:
         st.warning("Please enter a script to generate slides.")
