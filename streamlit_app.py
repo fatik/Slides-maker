@@ -30,7 +30,7 @@ def ai_process_content(text, instruction, max_retries=5):
     data = {
         "model": "mixtral-8x7b-32768",
         "messages": [
-            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text."},
+            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text. Never provide multiple options or use quotation marks unless it's a direct quote."},
             {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
         ]
     }
@@ -47,46 +47,47 @@ def ai_process_content(text, instruction, max_retries=5):
             time.sleep(2 ** attempt + random.random())  # Exponential backoff
 
 def select_layout(scene_content):
-    if re.search(r'\d+', scene_content):
-        return "large_number"
-    elif "!" in scene_content:
-        return "centered_square"
-    elif len(scene_content.split()) < 10:
-        return "title_subtitle"
-    elif "versus" in scene_content.lower() or "compared to" in scene_content.lower():
-        return "two_column_text"
-    elif "image" in scene_content.lower() or "picture" in scene_content.lower():
-        return "image_caption"
-    elif len(scene_content.split()) > 30:
-        return "bullet_points"
-    else:
-        return "single_text_box"
+    layouts = [
+        "left_aligned", "big_center", "bullet_points", "blank", 
+        "two_columns", "two_columns_image", "timeline", "comparison"
+    ]
+    return random.choice(layouts)
 
 def process_scene(scene_number, scene_content):
     layout = select_layout(scene_content)
     content = {}
     
-    if layout == "large_number":
-        number = re.search(r'\d+', scene_content).group()
-        content = {"number": number, "caption": ai_process_content(scene_content, "Generate a brief caption (max 5 words) to accompany this number on a slide.")}
-    elif layout in ["centered_square", "single_text_box"]:
-        content = {"text": ai_process_content(scene_content, "Extract the key idea in 5-7 words for a slide.")}
-    elif layout == "title_subtitle":
-        content = {
-            "title": ai_process_content(scene_content, "Create a catchy title (3-5 words) for a slide."),
-            "subtitle": ai_process_content(scene_content, "Provide a brief subtitle (max 10 words) that complements the title.")
-        }
+    if layout == "left_aligned":
+        content = {"text": ai_process_content(scene_content, "Extract the key idea in 10-15 words for a left-aligned slide.")}
+    elif layout == "big_center":
+        content = {"text": ai_process_content(scene_content, "Extract the key idea in 3-5 words for a big, centered slide.")}
     elif layout == "bullet_points":
         content = {
             "title": ai_process_content(scene_content, "Create a short title (3-5 words) for a bullet point slide."),
-            "bullets": [ai_process_content(scene_content, f"Extract key point {i} (max 5 words) for a bullet on the slide.") for i in range(1, 4)]
+            "bullets": [ai_process_content(scene_content, f"Extract key point {i} (5-7 words) for a bullet on the slide.") for i in range(1, 4)]
         }
-    elif layout == "image_caption":
-        content = {"caption": ai_process_content(scene_content, "Create a brief image caption (max 10 words) based on this text.")}
-    elif layout == "two_column_text":
+    elif layout == "blank":
+        content = {"text": ""}
+    elif layout == "two_columns":
         content = {
-            "left": ai_process_content(scene_content, "Summarize the first half of the content in 5-7 words for the left column of a slide."),
-            "right": ai_process_content(scene_content, "Summarize the second half of the content in 5-7 words for the right column of a slide.")
+            "left": ai_process_content(scene_content, "Summarize the first half of the content in 10-15 words for the left column."),
+            "right": ai_process_content(scene_content, "Summarize the second half of the content in 10-15 words for the right column.")
+        }
+    elif layout == "two_columns_image":
+        content = {
+            "image_caption": ai_process_content(scene_content, "Create a brief image caption (5-7 words) based on this text."),
+            "text": ai_process_content(scene_content, "Summarize the main point in 10-15 words for the text column.")
+        }
+    elif layout == "timeline":
+        content = {
+            "title": ai_process_content(scene_content, "Create a short title (3-5 words) for a timeline slide."),
+            "events": [ai_process_content(scene_content, f"Extract timeline event {i} (5-7 words).") for i in range(1, 4)]
+        }
+    elif layout == "comparison":
+        content = {
+            "title": ai_process_content(scene_content, "Create a short title (3-5 words) for a comparison slide."),
+            "left": ai_process_content(scene_content, "Summarize the first item in 5-7 words."),
+            "right": ai_process_content(scene_content, "Summarize the second item in 5-7 words.")
         }
     
     return f"Scene {scene_number}: layout: {layout}, content: {content}"
@@ -105,37 +106,47 @@ def create_slide(layout, content, width=800, height=600):
     d = ImageDraw.Draw(img)
     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
     title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
+    big_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 50)
 
     # Draw slide border
     d.rectangle([10, 10, width-10, height-10], outline="black")
 
-    if layout == "centered_square":
-        d.rectangle([width//4, height//4, 3*width//4, 3*height//4], outline="black")
-        d.text((width//2, height//2), content['text'], font=font, fill="black", anchor="mm")
+    if layout == "left_aligned":
+        d.text((50, height//2), content['text'], font=font, fill="black", anchor="lm")
 
-    elif layout == "single_text_box":
-        d.rectangle([50, 50, width-50, height-50], outline="black")
-        d.text((width//2, height//2), content['text'], font=font, fill="black", anchor="mm")
-
-    elif layout == "title_subtitle":
-        d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
-        d.text((width//2, 100), content['subtitle'], font=font, fill="black", anchor="mt")
-
-    elif layout == "large_number":
-        d.text((width//2, height//3), content['number'], font=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 100), fill="black", anchor="mm")
-        d.text((width//2, 2*height//3), content['caption'], font=font, fill="black", anchor="mm")
+    elif layout == "big_center":
+        d.text((width//2, height//2), content['text'], font=big_font, fill="black", anchor="mm")
 
     elif layout == "bullet_points":
         d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
         for i, bullet in enumerate(content['bullets'], 1):
             d.text((50, 100 + i*50), f"• {bullet}", font=font, fill="black")
 
-    elif layout == "image_caption":
-        d.rectangle([50, 50, width-50, height-150], outline="black")
-        d.text((width//2, height-75), content['caption'], font=font, fill="black", anchor="mm")
+    elif layout == "blank":
+        pass  # Leave the slide blank
 
-    elif layout == "two_column_text":
+    elif layout == "two_columns":
         d.line([(width//2, 50), (width//2, height-50)], fill="black")
+        d.text((width//4, height//2), content['left'], font=font, fill="black", anchor="mm")
+        d.text((3*width//4, height//2), content['right'], font=font, fill="black", anchor="mm")
+
+    elif layout == "two_columns_image":
+        d.line([(width//2, 50), (width//2, height-50)], fill="black")
+        d.rectangle([50, 50, width//2-50, height-150], outline="black")
+        d.text((width//4, height-75), content['image_caption'], font=font, fill="black", anchor="mm")
+        d.text((3*width//4, height//2), content['text'], font=font, fill="black", anchor="mm")
+
+    elif layout == "timeline":
+        d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
+        d.line([(50, height//2), (width-50, height//2)], fill="black")
+        for i, event in enumerate(content['events']):
+            x = 50 + (i * (width-100) // (len(content['events'])-1))
+            d.line([(x, height//2-10), (x, height//2+10)], fill="black")
+            d.text((x, height//2+30), event, font=font, fill="black", anchor="mt")
+
+    elif layout == "comparison":
+        d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
+        d.line([(width//2, 100), (width//2, height-50)], fill="black")
         d.text((width//4, height//2), content['left'], font=font, fill="black", anchor="mm")
         d.text((3*width//4, height//2), content['right'], font=font, fill="black", anchor="mm")
 
