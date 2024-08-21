@@ -87,10 +87,10 @@ def process_scene(scene_number, scene_content):
         content["text"] = ai_process_content(scene_content, "Extract the key idea in 10-15 words.")
     elif layout == "big_center":
         content["text"] = ai_process_content(scene_content, "Extract the key idea in 3-5 words.")
-    elif layout == "bullet_points":
+    elif layout == "bullet_points" or layout == "text_box":
         content["title"] = ai_process_content(scene_content, "Create a short title (3-5 words).")
-        bullet_content = ai_process_content(scene_content, "Extract 3 key points (7-10 words each). Format as a list with each point on a new line, prefixed with a bullet point (•).")
-        content["bullets"] = bullet_content.split('\n')  # Split the bullet points into a list
+        bullet_content = ai_process_content(scene_content, "Extract 3-4 key points (7-10 words each). Format as a list with each point on a new line, prefixed with a bullet point (•).")
+        content["text"] = bullet_content
     elif layout == "two_columns":
         split_content = re.split(r'\s+but\s+|\s+versus\s+|\s+compared\s+to\s+', scene_content, flags=re.IGNORECASE)
         if len(split_content) > 1:
@@ -109,9 +109,6 @@ def process_scene(scene_number, scene_content):
         percentage = re.search(r'\d+%', scene_content)
         content["percentage"] = percentage.group() if percentage else ""
         content["text"] = ai_process_content(scene_content, "Summarize the context of this percentage in 10-15 words.")
-    elif layout == "text_box":
-        content["title"] = ai_process_content(scene_content, "Create a short title (3-5 words).")
-        content["text"] = ai_process_content(scene_content, "Summarize the main points in 30-40 words.")
     
     return f"S#{scene_number}: layout: {layout}, content: {content}"
 
@@ -146,10 +143,10 @@ def create_slide(layout, content, width=800, height=600):
         for line in wrapped_text:
             d.text((width//2, y_text), line, font=big_font, fill="black", anchor="mm")
             y_text += 60
-    elif layout == "bullet_points":
+    elif layout == "bullet_points" or layout == "text_box":
         d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
         
-        bullets = content['bullets']
+        bullets = content['text'].split('\n')
         available_height = height - 150  # Subtracting space for title and margins
         bullet_spacing = available_height // (len(bullets) + 1)
         
@@ -190,13 +187,6 @@ def create_slide(layout, content, width=800, height=600):
         y_text = 2*height//3
         for line in wrapped_text:
             d.text((width//2, y_text), line, font=font, fill="black", anchor="mm")
-            y_text += 30
-    elif layout == "text_box":
-        d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
-        wrapped_text = textwrap.wrap(content['text'], width=60)
-        y_text = 100
-        for line in wrapped_text:
-            d.text((50, y_text), line, font=font, fill="black")
             y_text += 30
 
     wrapped_subtitle = textwrap.wrap(content['subtitle'], width=70)
