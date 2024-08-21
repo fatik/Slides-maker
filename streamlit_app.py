@@ -1,6 +1,8 @@
 import streamlit as st
 import re
-from collections import Counter
+from transformers import pipeline, set_seed
+
+
 # Define slide layouts
 SLIDE_LAYOUTS = {
     "single_text_box": {"name": "Single Text Box", "elements": [{"type": "text", "max_words": 30, "style": "centered"}]},
@@ -15,25 +17,20 @@ SLIDE_LAYOUTS = {
     "blank": {"name": "Blank Layout", "elements": []}
 }
 
-
 # Define slide layouts (keep the SLIDE_LAYOUTS dictionary as it was)
 
-def preprocess_text(text):
-    # Convert to lowercase and split into words
-    words = text.lower().split()
-    # Remove common words and short words
-    stop_words = set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'])
-    words = [word for word in words if word not in stop_words and len(word) > 2]
-    return words
+@st.cache_resource
+def load_summarizer():
+    return pipeline("summarization", model="facebook/bart-large-cnn", device=-1)
 
-def extract_key_phrases(text, max_words):
-    words = preprocess_text(text)
-    # Count word frequencies
-    word_freq = Counter(words)
-    # Sort words by frequency, then by their order of appearance in the original text
-    sorted_words = sorted(word_freq, key=lambda x: (-word_freq[x], words.index(x)))
-    # Return the top words up to max_words
-    return ' '.join(sorted_words[:max_words])
+summarizer = load_summarizer()
+set_seed(42)
+
+def smart_summarize(text, max_length):
+    if len(text.split()) <= max_length:
+        return text
+    summary = summarizer(text, max_length=max_length, min_length=10, do_sample=False)[0]['summary_text']
+    return summary
 
 def select_layout(scene_content):
     if re.search(r'\d+', scene_content):
@@ -57,28 +54,28 @@ def process_scene(scene_number, scene_content):
     
     if layout == "large_number":
         number = re.search(r'\d+', scene_content).group()
-        content = {"number": number, "caption": extract_key_phrases(scene_content, 20)}
+        content = {"number": number, "caption": smart_summarize(scene_content, 20)}
     elif layout in ["centered_square", "single_text_box"]:
-        content = {"text": extract_key_phrases(scene_content, 30)}
+        content = {"text": smart_summarize(scene_content, 30)}
     elif layout == "title_subtitle":
         sentences = re.split(r'[.!?]+', scene_content)
         content = {
-            "title": extract_key_phrases(sentences[0], 5),
-            "subtitle": extract_key_phrases(' '.join(sentences[1:]), 15) if len(sentences) > 1 else ""
+            "title": smart_summarize(sentences[0], 10),
+            "subtitle": smart_summarize(' '.join(sentences[1:]), 20) if len(sentences) > 1 else ""
         }
     elif layout == "bullet_points":
         sentences = re.split(r'[.!?]+', scene_content)
         content = {
-            "title": extract_key_phrases(sentences[0], 5),
-            "bullets": [extract_key_phrases(s, 8) for s in sentences[1:5]]
+            "title": smart_summarize(sentences[0], 10),
+            "bullets": [smart_summarize(s, 15) for s in sentences[1:4]]
         }
     elif layout == "image_caption":
-        content = {"caption": extract_key_phrases(scene_content, 15)}
+        content = {"caption": smart_summarize(scene_content, 20)}
     elif layout == "two_column_text":
         half = len(scene_content) // 2
         content = {
-            "left": extract_key_phrases(scene_content[:half], 30),
-            "right": extract_key_phrases(scene_content[half:], 30)
+            "left": smart_summarize(scene_content[:half], 25),
+            "right": smart_summarize(scene_content[half:], 25)
         }
     
     return f"Scene {scene_number}: layout: {layout}, content: {content}"
@@ -91,13 +88,13 @@ def process_script(script):
         results.append(process_scene(i, scene))
     return results
 
-st.title("Scene-Based Slide Generator")
+st.title("Smart Scene-Based Slide Generator")
 
 script = st.text_area("Enter your script here (use 'Scene X' to denote scene breaks):", height=300)
 
 if st.button("Generate Slides"):
     if script:
-        with st.spinner("Processing script and generating slides..."):
+        with st.spinner("Processing script and generating smart slides..."):
             slides = process_script(script)
             for slide in slides:
                 st.markdown(slide)
@@ -106,6 +103,6 @@ if st.button("Generate Slides"):
 
 st.markdown("""
 ---
-This app generates slide layouts and content based on your input script.
-It extracts key phrases and important words to fit content into the chosen layouts.
+This app generates intelligent slide layouts and content based on your input script.
+It uses an advanced summarization model to create concise and relevant content for each slide.
 """)
