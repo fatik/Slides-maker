@@ -1,9 +1,11 @@
 import streamlit as st
 import re
-from transformers import pipeline, set_seed
 import requests
 import time
 import random
+from transformers import pipeline, set_seed
+from PIL import Image, ImageDraw, ImageFont
+import io
 
 # Suppress warnings
 import warnings
@@ -98,21 +100,85 @@ def process_script(script):
         time.sleep(1)  # Add a small delay between processing scenes
     return results
 
-st.title("AI-Powered Scene-Based Slide Generator (using Groq)")
+def create_slide(layout, content, width=800, height=600):
+    img = Image.new('RGB', (width, height), color='white')
+    d = ImageDraw.Draw(img)
+    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
+    title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
+
+    # Draw slide border
+    d.rectangle([10, 10, width-10, height-10], outline="black")
+
+    if layout == "centered_square":
+        d.rectangle([width//4, height//4, 3*width//4, 3*height//4], outline="black")
+        d.text((width//2, height//2), content['text'], font=font, fill="black", anchor="mm")
+
+    elif layout == "single_text_box":
+        d.rectangle([50, 50, width-50, height-50], outline="black")
+        d.text((width//2, height//2), content['text'], font=font, fill="black", anchor="mm")
+
+    elif layout == "title_subtitle":
+        d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
+        d.text((width//2, 100), content['subtitle'], font=font, fill="black", anchor="mt")
+
+    elif layout == "large_number":
+        d.text((width//2, height//3), content['number'], font=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 100), fill="black", anchor="mm")
+        d.text((width//2, 2*height//3), content['caption'], font=font, fill="black", anchor="mm")
+
+    elif layout == "bullet_points":
+        d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
+        for i, bullet in enumerate(content['bullets'], 1):
+            d.text((50, 100 + i*50), f"• {bullet}", font=font, fill="black")
+
+    elif layout == "image_caption":
+        d.rectangle([50, 50, width-50, height-150], outline="black")
+        d.text((width//2, height-75), content['caption'], font=font, fill="black", anchor="mm")
+
+    elif layout == "two_column_text":
+        d.line([(width//2, 50), (width//2, height-50)], fill="black")
+        d.text((width//4, height//2), content['left'], font=font, fill="black", anchor="mm")
+        d.text((3*width//4, height//2), content['right'], font=font, fill="black", anchor="mm")
+
+    return img
+
+def parse_scene(scene_text):
+    match = re.match(r"Scene (\d+): layout: (\w+), content: (.+)", scene_text)
+    if match:
+        scene_num, layout, content = match.groups()
+        content = eval(content)  # Be cautious with eval in production!
+        return int(scene_num), layout, content
+    return None
+
+st.title("AI-Powered Slide Generator and Visualizer")
 
 script = st.text_area("Enter your script here (use 'Scene X' to denote scene breaks):", height=300)
 
-if st.button("Generate Slides"):
+if st.button("Generate Slides and Wireframes"):
     if script:
         with st.spinner("Processing script and generating intelligent slides..."):
             slides = process_script(script)
+            
             for slide in slides:
                 st.markdown(slide)
+                
+                parsed = parse_scene(slide)
+                if parsed:
+                    scene_num, layout, content = parsed
+                    slide_image = create_slide(layout, content)
+                    
+                    # Convert to bytes
+                    buf = io.BytesIO()
+                    slide_image.save(buf, format='PNG')
+                    byte_im = buf.getvalue()
+
+                    st.image(byte_im, caption=f"Wireframe for Scene {scene_num}")
+                    st.markdown("---")
     else:
         st.warning("Please enter a script to generate slides.")
 
 st.markdown("""
 ---
 This app uses Groq AI to generate intelligent slide layouts and content based on your input script.
-It creates concise and relevant content for each slide, different from the original subtitles.
+It creates concise and relevant content for each slide, different from the original subtitles,
+and provides wireframe mockups for visualization.
 """)
