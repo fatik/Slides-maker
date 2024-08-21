@@ -92,8 +92,8 @@ def process_scene(scene_number, scene_content):
         content["title"] = ai_process_content(scene_content, "Create a short title (3-5 words) for a bullet point slide.")
         content["bullets"] = [ai_process_content(scene_content, f"Extract unique key point {i} (5-9 words) for a bullet on the slide. Ensure each point is distinct.") for i in range(1, 4)]
     elif layout == "two_columns":
-        content["left"] = ai_process_content(scene_content, "Summarize the first half of the content in 5-15 words for the left column.")
-        content["right"] = ai_process_content(scene_content, "Summarize the second half of the content in 5-15 words for the right column.")
+        content["left"] = ai_process_content(scene_content, "Present the idea before keyword such as but in words not exceeding 15")
+        content["right"] = ai_process_content(scene_content, "Present the idea after keyword such as but in words not exceeding 15")
     elif layout == "two_columns_image":
         content["image_caption"] = ai_process_content(scene_content, "Create a brief image caption (5-7 words) based on this text.")
         content["text"] = ai_process_content(scene_content, "Summarize the main point in 10-15 words for the text column.")
@@ -104,7 +104,7 @@ def process_scene(scene_number, scene_content):
     elif layout == "large_number":
         number = re.search(r'\d+', scene_content)
         content["number"] = number.group() if number else ""
-        content["caption"] = ai_process_content(scene_content, "Generate a brief caption (max 10 words) to accompany this number on a slide.")
+        content["caption"] = ai_process_content(scene_content, "Generate a brief caption (max 5 words) to accompany this number(s) on a slide.")
     
     return f"S#{scene_number}: layout: {layout}, content: {content}"
 
