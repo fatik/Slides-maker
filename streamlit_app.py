@@ -31,7 +31,7 @@ def ai_process_content(text, instruction, max_retries=5):
     data = {
         "model": "mixtral-8x7b-32768",
         "messages": [
-            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text. Never provide multiple options, use quotation marks unless it's a direct quote, or add explanatory comments. Keep the content direct and relevant to the slide. For single facts or points, don't create multiple bullets."},
+            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text. Never use quotation marks unless it's a direct quote. Keep the content direct and relevant to the slide. For single facts or points, don't create multiple bullets."},
             {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
         ]
     }
@@ -46,6 +46,13 @@ def ai_process_content(text, instruction, max_retries=5):
                 st.warning(f"Failed to process content after {max_retries} attempts. Using fallback method.")
                 return summarizer(text, max_length=20, min_length=5, do_sample=False)[0]['summary_text']
             time.sleep(2 ** attempt + random.random())  # Exponential backoff
+
+def break_into_scenes(script):
+    scenes = []
+    sentences = re.split(r'(?<=[.!?])\s+', script)
+    for i, sentence in enumerate(sentences, 1):
+        scenes.append(f"Scene {i} {sentence.strip()}")
+    return scenes
 
 def select_layout(scene_content):
     if re.search(r'\d+\s*(?:kg|lbs?|pounds?)', scene_content, re.IGNORECASE):
@@ -107,11 +114,10 @@ def process_scene(scene_number, scene_content):
             "caption": ai_process_content(scene_content, "Generate a brief caption (max 10 words) to accompany this number on a slide.")
         }
     
+    content["subtitle"] = ' '.join(scene_content.split()[2:])  # Add original scene text as subtitle
     return f"Scene {scene_number}: layout: {layout}, content: {content}"
 
-def process_script(script):
-    scenes = re.split(r'Scene \d+', script)
-    scenes = [scene.strip() for scene in scenes if scene.strip()]
+def process_script(scenes):
     results = []
     for i, scene in enumerate(scenes, 1):
         results.append(process_scene(i, scene))
@@ -124,6 +130,7 @@ def create_slide(layout, content, width=800, height=600):
     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
     title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
     big_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 50)
+    subtitle_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
 
     # Draw slide border
     d.rectangle([10, 10, width-10, height-10], outline="black")
@@ -204,6 +211,13 @@ def create_slide(layout, content, width=800, height=600):
             d.text((width//2, y_text), line, font=font, fill="black", anchor="mm")
             y_text += 30
 
+    # Add subtitle at the bottom
+    wrapped_subtitle = textwrap.wrap(content['subtitle'], width=70)
+    y_subtitle = height - 40 - (len(wrapped_subtitle) - 1) * 20
+    for line in wrapped_subtitle:
+        d.text((width//2, y_subtitle), line, font=subtitle_font, fill="black", anchor="mm")
+        y_subtitle += 20
+
     return img
 
 def parse_scene(scene_text):
@@ -216,12 +230,18 @@ def parse_scene(scene_text):
 
 st.title("AI-Powered Slide Generator and Visualizer")
 
-script = st.text_area("Enter your script here (use 'Scene X' to denote scene breaks):", height=300)
+script = st.text_area("Enter your script here:", height=300)
 
 if st.button("Generate Slides and Wireframes"):
     if script:
-        with st.spinner("Processing script and generating intelligent slides..."):
-            slides = process_script(script)
+        with st.spinner("Breaking script into scenes..."):
+            scenes = break_into_scenes(script)
+            st.subheader("Scenes:")
+            for scene in scenes:
+                st.write(scene)
+            
+        with st.spinner("Processing scenes and generating intelligent slides..."):
+            slides = process_script(scenes)
             
             for slide in slides:
                 st.markdown(slide)
