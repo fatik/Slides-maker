@@ -144,21 +144,22 @@ def create_slide(layout, content, width=800, height=600):
             d.text((width//2, y_text), line, font=big_font, fill="black", anchor="mm")
             y_text += 60
     elif layout == "bullet_points" or layout == "text_box":
-        d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
+        d.text((width//2, 30), content['title'], font=title_font, fill="black", anchor="mt")  # Moved title up
         
         bullets = content['text'].split('\n')
-        available_height = height - 60  # Subtracting space for title and margins
-        bullet_spacing = available_height // (len(bullets) + 1)
+        available_height = height - 100  # Increased available height
+        bullet_spacing = min(available_height // (len(bullets) + 1), 50)  # Cap maximum spacing
         
-        for i, bullet in enumerate(bullets, 1):
-            y_position = 100 + i * bullet_spacing
+        y_position = 80  # Start bullets closer to the title
+        for bullet in bullets:
             wrapped_bullet = textwrap.wrap(bullet, width=40)
             for j, line in enumerate(wrapped_bullet):
                 if j == 0:
                     d.text((50, y_position), line, font=font, fill="black")
                 else:
                     d.text((70, y_position), line, font=font, fill="black")
-                y_position += 30
+                y_position += 25  # Reduced line spacing within bullets
+            y_position += bullet_spacing - 25  # Add spacing between bullets, but subtract the last line spacing
     elif layout == "two_columns":
         d.line([(width//2, 50), (width//2, height-50)], fill="black")
         wrapped_left = textwrap.wrap(content['left'], width=20)
