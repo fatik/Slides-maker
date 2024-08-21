@@ -57,6 +57,8 @@ def break_into_scenes(script):
 def select_layout(scene_content):
     if not scene_content.strip():
         return "blank"
+    elif re.search(r'\d+%', scene_content):
+        return "percentage"
     elif re.search(r'\d+\s*(?:kg|lbs?|pounds?|pizzas?)', scene_content, re.IGNORECASE):
         return "large_number"
     elif "!" in scene_content or len(scene_content.split()) <= 10:
@@ -68,29 +70,26 @@ def select_layout(scene_content):
     elif len(re.findall(r'[.!?]', scene_content)) >= 3:
         return "bullet_points"
     elif "image" in scene_content.lower() or "picture" in scene_content.lower():
-        return "two_columns_image"
+        return "image_caption"
     elif len(scene_content.split()) > 30:
-        return "two_columns"
+        return "text_box"
     else:
         return "left_aligned"
 
 def process_scene(scene_number, scene_content):
-    # Remove the scene number from the content
     scene_content = re.sub(r'^S#\d+:\s*', '', scene_content)
-
     layout = select_layout(scene_content)
     content = {"subtitle": scene_content}
 
     if layout == "blank":
         return f"S#{scene_number}: layout: blank, content: {content}"
-    
-    if layout == "left_aligned":
+    elif layout == "left_aligned":
         content["text"] = ai_process_content(scene_content, "Extract the key idea in 10-15 words.")
     elif layout == "big_center":
         content["text"] = ai_process_content(scene_content, "Extract the key idea in 3-5 words.")
     elif layout == "bullet_points":
         content["title"] = ai_process_content(scene_content, "Create a short title (3-5 words).")
-        content["bullets"] = [ai_process_content(scene_content, f"Extract unique key point {i} (5-9 words). Ensure each point is distinct.") for i in range(1, 4)]
+        content["bullets"] = [ai_process_content(scene_content, f"Extract unique key point {i} (5-9 words). Ensure each point is distinct.") for i in range(1, 5)]
     elif layout == "two_columns":
         split_content = re.split(r'\s+but\s+|\s+versus\s+|\s+compared\s+to\s+', scene_content, flags=re.IGNORECASE)
         if len(split_content) > 1:
@@ -99,13 +98,19 @@ def process_scene(scene_number, scene_content):
         else:
             content["left"] = ai_process_content(scene_content, "Summarize the first half in 5-7 words.")
             content["right"] = ai_process_content(scene_content, "Summarize the second half in 5-7 words.")
-    elif layout == "two_columns_image":
+    elif layout == "image_caption":
         content["image_caption"] = ai_process_content(scene_content, "Create a brief image caption (5-7 words).")
-        content["text"] = ai_process_content(scene_content, "Summarize the main point in 10-15 words.")
     elif layout == "large_number":
         number = re.search(r'\d+', scene_content)
         content["number"] = number.group() if number else ""
         content["caption"] = ai_process_content(scene_content, "Generate a brief caption (max 5 words) to accompany this number.")
+    elif layout == "percentage":
+        percentage = re.search(r'\d+%', scene_content)
+        content["percentage"] = percentage.group() if percentage else ""
+        content["text"] = ai_process_content(scene_content, "Summarize the context of this percentage in 10-15 words.")
+    elif layout == "text_box":
+        content["title"] = ai_process_content(scene_content, "Create a short title (3-5 words).")
+        content["text"] = ai_process_content(scene_content, "Summarize the main points in 30-40 words.")
     
     return f"S#{scene_number}: layout: {layout}, content: {content}"
 
@@ -124,11 +129,10 @@ def create_slide(layout, content, width=800, height=600):
     big_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 50)
     subtitle_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
 
-    # Draw slide border
     d.rectangle([10, 10, width-10, height-10], outline="black")
 
     if layout == "blank":
-        pass  # Leave the slide blank except for the subtitle
+        pass
     elif layout == "left_aligned":
         wrapped_text = textwrap.wrap(content['text'], width=40)
         y_text = height // 2 - len(wrapped_text) * 15
@@ -157,15 +161,9 @@ def create_slide(layout, content, width=800, height=600):
         for line in wrapped_right:
             d.text((3*width//4, y_right), line, font=font, fill="black", anchor="mm")
             y_right += 30
-    elif layout == "two_columns_image":
-        d.line([(width//2, 50), (width//2, height-50)], fill="black")
-        d.rectangle([50, 50, width//2-50, height-150], outline="black")
-        d.text((width//4, height-75), content['image_caption'], font=font, fill="black", anchor="mm")
-        wrapped_text = textwrap.wrap(content['text'], width=20)
-        y_text = height // 2 - len(wrapped_text) * 15
-        for line in wrapped_text:
-            d.text((3*width//4, y_text), line, font=font, fill="black", anchor="mm")
-            y_text += 30
+    elif layout == "image_caption":
+        d.rectangle([50, 50, width-50, height-100], outline="black")
+        d.text((width//2, height-50), content['image_caption'], font=font, fill="black", anchor="mm")
     elif layout == "large_number":
         d.text((width//2, height//3), content['number'], font=big_font, fill="black", anchor="mm")
         wrapped_caption = textwrap.wrap(content['caption'], width=30)
@@ -173,8 +171,21 @@ def create_slide(layout, content, width=800, height=600):
         for line in wrapped_caption:
             d.text((width//2, y_text), line, font=font, fill="black", anchor="mm")
             y_text += 30
+    elif layout == "percentage":
+        d.text((width//2, height//3), content['percentage'], font=big_font, fill="black", anchor="mm")
+        wrapped_text = textwrap.wrap(content['text'], width=40)
+        y_text = 2*height//3
+        for line in wrapped_text:
+            d.text((width//2, y_text), line, font=font, fill="black", anchor="mm")
+            y_text += 30
+    elif layout == "text_box":
+        d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
+        wrapped_text = textwrap.wrap(content['text'], width=60)
+        y_text = 100
+        for line in wrapped_text:
+            d.text((50, y_text), line, font=font, fill="black")
+            y_text += 30
 
-    # Add subtitle at the bottom
     wrapped_subtitle = textwrap.wrap(content['subtitle'], width=70)
     y_subtitle = height - 40 - (len(wrapped_subtitle) - 1) * 20
     for line in wrapped_subtitle:
@@ -214,7 +225,6 @@ if st.button("Generate Slides and Wireframes"):
                     scene_num, layout, content = parsed
                     slide_image = create_slide(layout, content)
                     
-                    # Convert to bytes
                     buf = io.BytesIO()
                     slide_image.save(buf, format='PNG')
                     byte_im = buf.getvalue()
