@@ -88,32 +88,38 @@ def extract_key_info(text):
     sentences = re.split(r'(?<=[.!?])\s+', summary)
     return sentences
 
+def safe_get(lst, index, default=""):
+    if not lst:
+        return default
+    if index >= 0:
+        return lst[index] if index < len(lst) else default
+    else:
+        return lst[index] if abs(index) <= len(lst) else default
+
+def safe_split(text, max_words):
+    words = text.split()
+    return ' '.join(words[:max_words])
+
 def fit_content_to_layout(content, layout):
     fitted_content = {}
-    
-    def safe_get(lst, index, default=""):
-        return lst[index] if index < len(lst) else default
-    
-    def safe_split(text, max_words):
-        words = text.split()
-        return ' '.join(words[:max_words])
 
     for element in layout['elements']:
+        if not content:
+            fitted_content[element['type']] = "N/A"
+            continue
+
         if element['type'] in ['heading', 'title', 'caption', 'subheading', 'description']:
             fitted_content[element['type']] = safe_split(safe_get(content, 0), element['max_words'])
-            if content:
-                content = content[1:]
+            content = content[1:] if content else []
         elif element['type'] == 'bullets':
             bullets = []
             for _ in range(min(element['max_bullets'], len(content))):
                 bullets.append(safe_split(safe_get(content, 0), element['max_words_per_bullet']))
-                if content:
-                    content = content[1:]
+                content = content[1:] if content else []
             fitted_content[element['type']] = bullets
         elif element['type'] == 'quote':
             fitted_content[element['type']] = safe_split(safe_get(content, 0), element['max_words'])
-            if content:
-                content = content[1:]
+            content = content[1:] if content else []
         elif element['type'] == 'attribution':
             fitted_content[element['type']] = safe_split(safe_get(content, -1), element['max_words'])
         elif element['type'] == 'number':
@@ -123,8 +129,7 @@ def fit_content_to_layout(content, layout):
             points = []
             for _ in range(min(element['max_points'], len(content))):
                 points.append(safe_split(safe_get(content, 0), element['max_words_per_point']))
-                if content:
-                    content = content[1:]
+                content = content[1:] if content else []
             fitted_content[element['type']] = points
         elif element['type'] == 'button':
             fitted_content[element['type']] = safe_split(safe_get(content, -1), element['max_words'])
@@ -132,8 +137,7 @@ def fit_content_to_layout(content, layout):
             items = []
             for _ in range(element['items']):
                 items.append(safe_split(safe_get(content, 0), element['max_words_per_item']))
-                if content:
-                    content = content[1:]
+                content = content[1:] if content else []
             fitted_content[element['type']] = items
         elif element['type'] == 'column':
             column_content = ' '.join(content[:2])
