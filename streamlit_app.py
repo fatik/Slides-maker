@@ -31,7 +31,7 @@ def ai_process_content(text, instruction, max_retries=5):
     data = {
         "model": "mixtral-8x7b-32768",
         "messages": [
-            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text. Never use quotation marks unless it's a direct quote. Keep the content direct and relevant to the slide. For single facts or points, don't create multiple bullets."},
+            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text. Never use quotation marks unless it's a direct quote. Keep the content direct and relevant to the slide. For single facts or points, don't create multiple bullets. Never mention 'Scene' or scene numbers in the content. Provide unique content for each bullet point."},
             {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
         ]
     }
@@ -55,12 +55,12 @@ def break_into_scenes(script):
     return scenes
 
 def select_layout(scene_content):
-    if re.search(r'\d+\s*(?:kg|lbs?|pounds?)', scene_content, re.IGNORECASE):
+    if re.search(r'\d+\s*(?:kg|lbs?|pounds?|pizzas?)', scene_content, re.IGNORECASE):
         return "large_number"
     elif "!" in scene_content or len(scene_content.split()) <= 10:
         return "big_center"
     elif any(word in scene_content.lower() for word in ["first", "then", "finally", "lastly"]):
-        return "timeline"
+        return "two_columns"
     elif "versus" in scene_content.lower() or "compared to" in scene_content.lower():
         return "comparison"
     elif len(re.findall(r'[.!?]', scene_content)) >= 3:
@@ -73,17 +73,20 @@ def select_layout(scene_content):
         return "left_aligned"
 
 def process_scene(scene_number, scene_content):
+    if not scene_content.strip():
+        return f"Scene {scene_number}: layout: blank, content: {{'subtitle': ''}}"
+
     layout = select_layout(scene_content)
     content = {}
     
     if layout == "left_aligned":
-        content = {"text": ai_process_content(scene_content, "Extract the key idea in 10-15 words for a left-aligned slide. Do not include any explanatory comments.")}
+        content = {"text": ai_process_content(scene_content, "Extract the key idea in 10-15 words for a left-aligned slide. Do not include any explanatory comments or mention of scenes.")}
     elif layout == "big_center":
-        content = {"text": ai_process_content(scene_content, "Extract the key idea in 3-5 words for a big, centered slide.")}
+        content = {"text": ai_process_content(scene_content, "Extract the key idea in 3-5 words for a big, centered slide. Do not mention scenes.")}
     elif layout == "bullet_points":
         content = {
-            "title": ai_process_content(scene_content, "Create a short title (3-5 words) for a bullet point slide."),
-            "bullets": [ai_process_content(scene_content, f"Extract unique key point {i} (5-7 words) for a bullet on the slide. Only create multiple bullets if there are distinct points in the original content.") for i in range(1, 4)]
+            "title": ai_process_content(scene_content, "Create a short title (3-5 words) for a bullet point slide. Do not mention scenes."),
+            "bullets": [ai_process_content(scene_content, f"Extract unique key point {i} (5-7 words) for a bullet on the slide. Ensure each point is distinct.") for i in range(1, 4)]
         }
     elif layout == "two_columns":
         content = {
@@ -94,11 +97,6 @@ def process_scene(scene_number, scene_content):
         content = {
             "image_caption": ai_process_content(scene_content, "Create a brief image caption (5-7 words) based on this text."),
             "text": ai_process_content(scene_content, "Summarize the main point in 10-15 words for the text column.")
-        }
-    elif layout == "timeline":
-        content = {
-            "title": ai_process_content(scene_content, "Create a short title (3-5 words) for a timeline slide."),
-            "events": [ai_process_content(scene_content, f"Extract unique timeline event {i} (5-7 words). Ensure each event is distinct and relevant to the content.") for i in range(1, 4)]
         }
     elif layout == "comparison":
         content = {
@@ -176,18 +174,6 @@ def create_slide(layout, content, width=800, height=600):
         for line in wrapped_text:
             d.text((3*width//4, y_text), line, font=font, fill="black", anchor="mm")
             y_text += 30
-
-    elif layout == "timeline":
-        d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
-        d.line([(50, height//2), (width-50, height//2)], fill="black")
-        for i, event in enumerate(content['events']):
-            x = 50 + (i * (width-100) // (len(content['events'])-1))
-            d.line([(x, height//2-10), (x, height//2+10)], fill="black")
-            wrapped_event = textwrap.wrap(event, width=10)
-            y_event = height//2 + 30
-            for line in wrapped_event:
-                d.text((x, y_event), line, font=font, fill="black", anchor="mt")
-                y_event += 20
 
     elif layout == "comparison":
         d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
