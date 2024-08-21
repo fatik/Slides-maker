@@ -1,6 +1,15 @@
 import streamlit as st
 import re
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from collections import Counter
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize, sent_tokenize
+
+# Download necessary NLTK data
+nltk.download('punkt', quiet=True)
+nltk.download('stopwords', quiet=True)
+
+# Define slide layouts (keep the SLIDE_LAYOUTS dictionary as it was)
 
 # Define slide layouts
 SLIDE_LAYOUTS = {
@@ -17,14 +26,23 @@ SLIDE_LAYOUTS = {
 }
 
 
-@st.cache_resource
-def load_summarizer():
-    model_name = "facebook/bart-base"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-    return model, tokenizer
 
-model, tokenizer = load_summarizer()
+def preprocess_text(text):
+    # Tokenize the text
+    words = word_tokenize(text.lower())
+    # Remove stopwords and punctuation
+    stop_words = set(stopwords.words('english'))
+    words = [word for word in words if word.isalnum() and word not in stop_words]
+    return words
+
+def extract_key_phrases(text, max_words):
+    words = preprocess_text(text)
+    # Count word frequencies
+    word_freq = Counter(words)
+    # Sort words by frequency, then by their order of appearance in the original text
+    sorted_words = sorted(word_freq, key=lambda x: (-word_freq[x], words.index(x)))
+    # Return the top words up to max_words
+    return ' '.join(sorted_words[:max_words])
 
 def select_layout(scene_content):
     if re.search(r'\d+', scene_content):
@@ -42,37 +60,35 @@ def select_layout(scene_content):
     else:
         return "single_text_box"
 
-def summarize_content(text, max_words):
-    input_length = len(text.split())
-    if input_length <= max_words:
-        return text
-    
-    inputs = tokenizer(text, return_tensors="pt", max_length=512, truncation=True)
-    summary_ids = model.generate(inputs["input_ids"], max_length=max_words, min_length=1, length_penalty=2.0, num_beams=4, early_stopping=True)
-    summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-    return ' '.join(summary.split()[:max_words])
-
 def process_scene(scene_number, scene_content):
     layout = select_layout(scene_content)
     content = {}
     
     if layout == "large_number":
         number = re.search(r'\d+', scene_content).group()
-        content = {"number": number, "caption": summarize_content(scene_content, 20)}
+        content = {"number": number, "caption": extract_key_phrases(scene_content, 20)}
     elif layout in ["centered_square", "single_text_box"]:
-        content = {"text": summarize_content(scene_content, 30)}
+        content = {"text": extract_key_phrases(scene_content, 30)}
     elif layout == "title_subtitle":
-        words = scene_content.split()
-        content = {"title": ' '.join(words[:5]), "subtitle": summarize_content(' '.join(words[5:]), 15)}
+        sentences = sent_tokenize(scene_content)
+        content = {
+            "title": extract_key_phrases(sentences[0], 5),
+            "subtitle": extract_key_phrases(' '.join(sentences[1:]), 15) if len(sentences) > 1 else ""
+        }
     elif layout == "bullet_points":
-        sentences = re.split(r'[.!?]+', scene_content)
-        content = {"title": summarize_content(sentences[0], 5), "bullets": [summarize_content(s, 8) for s in sentences[1:5]]}
+        sentences = sent_tokenize(scene_content)
+        content = {
+            "title": extract_key_phrases(sentences[0], 5),
+            "bullets": [extract_key_phrases(s, 8) for s in sentences[1:5]]
+        }
     elif layout == "image_caption":
-        content = {"caption": summarize_content(scene_content, 15)}
+        content = {"caption": extract_key_phrases(scene_content, 15)}
     elif layout == "two_column_text":
-        half = len(scene_content.split()) // 2
-        content = {"left": summarize_content(' '.join(scene_content.split()[:half]), 30),
-                   "right": summarize_content(' '.join(scene_content.split()[half:]), 30)}
+        half = len(scene_content) // 2
+        content = {
+            "left": extract_key_phrases(scene_content[:half], 30),
+            "right": extract_key_phrases(scene_content[half:], 30)
+        }
     
     return f"Scene {scene_number}: layout: {layout}, content: {content}"
 
@@ -100,5 +116,5 @@ if st.button("Generate Slides"):
 st.markdown("""
 ---
 This app generates slide layouts and content based on your input script.
-It uses a pre-trained summarization model to fit content into the chosen layouts.
+It extracts key phrases and important words to fit content into the chosen layouts.
 """)
