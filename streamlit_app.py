@@ -29,9 +29,9 @@ def ai_process_content(text, instruction, max_retries=5):
         "Content-Type": "application/json"
     }
     data = {
-        "model": "llama-3.1-8b-instant",
+        "model": "llama3-70b-8192",
         "messages": [
-            {"role": "system", "content": "Create concise slide content from video script text. Never use quotation marks unless it's a direct quote. Keep the content direct and relevant to the slide, never exceeding the length of text provided. For single facts or points, don't use slide with bullets. Never mention scene numbers in the content. Provide unique content for each bullet point. Do not include any explanations, descriptions, or reasoning about your output. If the slide has 1-8 words and you don't have context about it or it can't be summarized further then return the original text. Your job is to supplement the narration or subtitles, not be alternative. For two-column slides, ensure the content is distinct for each column."},
+            {"role": "system", "content": "Create concise slide content from video script text. Never use quotation marks unless it's a direct quote. Keep the content direct and relevant to the slide, never exceeding the length of text provided. Never mention scene numbers in the content. Provide unique content for each bullet point. Do not include your own explanations, descriptions, or reasoning about your output. If the slide has 1-8 words and you don't have context about it or it can't be summarized further then return the original text. Your job is to supplement the narration or subtitles, not be alternative. For two-column slides, ensure the content is distinct for each column. Use bullets layout where there are multiple and many points"},
             {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
         ]
     }
