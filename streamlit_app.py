@@ -31,7 +31,7 @@ def ai_process_content(text, instruction, max_retries=5):
     data = {
         "model": "mixtral-8x7b-32768",
         "messages": [
-            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text. Never provide multiple options or use quotation marks unless it's a direct quote. Always provide unique content for each point."},
+            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text. Never provide multiple options, use quotation marks unless it's a direct quote, or add explanatory comments. Keep the content direct and relevant to the slide. For single facts or points, don't create multiple bullets."},
             {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
         ]
     }
@@ -48,31 +48,40 @@ def ai_process_content(text, instruction, max_retries=5):
             time.sleep(2 ** attempt + random.random())  # Exponential backoff
 
 def select_layout(scene_content):
-    layouts = [
-        "left_aligned", "big_center", "bullet_points", "blank", 
-        "two_columns", "two_columns_image", "timeline", "comparison"
-    ]
-    return random.choice(layouts)
+    if re.search(r'\d+\s*(?:kg|lbs?|pounds?)', scene_content, re.IGNORECASE):
+        return "large_number"
+    elif "!" in scene_content or len(scene_content.split()) <= 10:
+        return "big_center"
+    elif any(word in scene_content.lower() for word in ["first", "then", "finally", "lastly"]):
+        return "timeline"
+    elif "versus" in scene_content.lower() or "compared to" in scene_content.lower():
+        return "comparison"
+    elif len(re.findall(r'[.!?]', scene_content)) >= 3:
+        return "bullet_points"
+    elif "image" in scene_content.lower() or "picture" in scene_content.lower():
+        return "two_columns_image"
+    elif len(scene_content.split()) > 30:
+        return "two_columns"
+    else:
+        return "left_aligned"
 
 def process_scene(scene_number, scene_content):
     layout = select_layout(scene_content)
     content = {}
     
     if layout == "left_aligned":
-        content = {"text": ai_process_content(scene_content, "Extract the key idea in 10-15 words for a left-aligned slide.")}
+        content = {"text": ai_process_content(scene_content, "Extract the key idea in 10-15 words for a left-aligned slide. Do not include any explanatory comments.")}
     elif layout == "big_center":
         content = {"text": ai_process_content(scene_content, "Extract the key idea in 3-5 words for a big, centered slide.")}
     elif layout == "bullet_points":
         content = {
             "title": ai_process_content(scene_content, "Create a short title (3-5 words) for a bullet point slide."),
-            "bullets": [ai_process_content(scene_content, f"Extract unique key point {i} (5-7 words) for a bullet on the slide.") for i in range(1, 4)]
+            "bullets": [ai_process_content(scene_content, f"Extract unique key point {i} (5-7 words) for a bullet on the slide. Only create multiple bullets if there are distinct points in the original content.") for i in range(1, 4)]
         }
-    elif layout == "blank":
-        content = {"text": ""}
     elif layout == "two_columns":
         content = {
-            "left": ai_process_content(scene_content, "Summarize the first half of the content in 10-15 words for the left column."),
-            "right": ai_process_content(scene_content, "Summarize the second half of the content in 10-15 words for the right column.")
+            "left": ai_process_content(scene_content, "Summarize the first half of the content in 10-15 words for the left column. Do not include any prompts or descriptions."),
+            "right": ai_process_content(scene_content, "Summarize the second half of the content in 10-15 words for the right column. Do not include any prompts or descriptions.")
         }
     elif layout == "two_columns_image":
         content = {
@@ -82,13 +91,20 @@ def process_scene(scene_number, scene_content):
     elif layout == "timeline":
         content = {
             "title": ai_process_content(scene_content, "Create a short title (3-5 words) for a timeline slide."),
-            "events": [ai_process_content(scene_content, f"Extract unique timeline event {i} (5-7 words).") for i in range(1, 4)]
+            "events": [ai_process_content(scene_content, f"Extract unique timeline event {i} (5-7 words). Ensure each event is distinct and relevant to the content.") for i in range(1, 4)]
         }
     elif layout == "comparison":
         content = {
             "title": ai_process_content(scene_content, "Create a short title (3-5 words) for a comparison slide."),
             "left": ai_process_content(scene_content, "Summarize the first item in 5-7 words."),
             "right": ai_process_content(scene_content, "Summarize the second item in 5-7 words.")
+        }
+    elif layout == "large_number":
+        number = re.search(r'\d+', scene_content)
+        number = number.group() if number else ""
+        content = {
+            "number": number,
+            "caption": ai_process_content(scene_content, "Generate a brief caption (max 10 words) to accompany this number on a slide.")
         }
     
     return f"Scene {scene_number}: layout: {layout}, content: {content}"
@@ -130,9 +146,6 @@ def create_slide(layout, content, width=800, height=600):
         d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
         for i, bullet in enumerate(content['bullets'], 1):
             d.text((50, 100 + i*50), f"• {bullet}", font=font, fill="black")
-
-    elif layout == "blank":
-        pass  # Leave the slide blank
 
     elif layout == "two_columns":
         d.line([(width//2, 50), (width//2, height-50)], fill="black")
@@ -182,6 +195,14 @@ def create_slide(layout, content, width=800, height=600):
         for line in wrapped_right:
             d.text((3*width//4, y_right), line, font=font, fill="black", anchor="mm")
             y_right += 30
+
+    elif layout == "large_number":
+        d.text((width//2, height//3), content['number'], font=big_font, fill="black", anchor="mm")
+        wrapped_caption = textwrap.wrap(content['caption'], width=30)
+        y_text = 2*height//3
+        for line in wrapped_caption:
+            d.text((width//2, y_text), line, font=font, fill="black", anchor="mm")
+            y_text += 30
 
     return img
 
