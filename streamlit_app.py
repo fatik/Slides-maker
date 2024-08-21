@@ -1,7 +1,7 @@
 import streamlit as st
 import re
 from transformers import pipeline, set_seed
-from openai import OpenAI
+import requests
 import time
 import random
 
@@ -9,8 +9,9 @@ import random
 import warnings
 warnings.filterwarnings("ignore")
 
-# Set up OpenAI client
-client = OpenAI(api_key=st.secrets["openai_api_key"])
+# Set up Groq client
+GROQ_API_KEY = st.secrets["groq_api_key"]
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 @st.cache_resource
 def load_summarizer():
@@ -20,16 +21,23 @@ summarizer = load_summarizer()
 set_seed(42)
 
 def ai_process_content(text, instruction, max_retries=5):
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": "mixtral-8x7b-32768",
+        "messages": [
+            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text."},
+            {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
+        ]
+    }
+    
     for attempt in range(max_retries):
         try:
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text."},
-                    {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
-                ]
-            )
-            return response.choices[0].message.content.strip()
+            response = requests.post(GROQ_API_URL, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()['choices'][0]['message']['content'].strip()
         except Exception as e:
             if attempt == max_retries - 1:
                 st.warning(f"Failed to process content after {max_retries} attempts. Using fallback method.")
@@ -90,7 +98,7 @@ def process_script(script):
         time.sleep(1)  # Add a small delay between processing scenes
     return results
 
-st.title("AI-Powered Scene-Based Slide Generator")
+st.title("AI-Powered Scene-Based Slide Generator (using Groq)")
 
 script = st.text_area("Enter your script here (use 'Scene X' to denote scene breaks):", height=300)
 
@@ -105,6 +113,6 @@ if st.button("Generate Slides"):
 
 st.markdown("""
 ---
-This app uses AI to generate intelligent slide layouts and content based on your input script.
+This app uses Groq AI to generate intelligent slide layouts and content based on your input script.
 It creates concise and relevant content for each slide, different from the original subtitles.
 """)
