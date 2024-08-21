@@ -31,7 +31,7 @@ def ai_process_content(text, instruction, max_retries=5):
     data = {
         "model": "mixtral-8x7b-32768",
         "messages": [
-            {"role": "system", "content": "Create concise slide content from video script text. Never use quotation marks unless it's a direct quote. Keep the content direct and relevant to the slide, never exceeding the length of text provided. For single facts or points, don't use slide with bullets. Never mention scene numbers in the content. Provide unique content for each bullet point. Do not include your own prompts or descriptions or explain yourself why you did what you did. If the slide have 1-5 words and you don't have context about it or it can't be summarized futher then no need to give output, leave it blank"},
+            {"role": "system", "content": "Create concise slide content from video script text. Never use quotation marks unless it's a direct quote. Keep the content direct and relevant to the slide, never exceeding the length of text provided. For single facts or points, don't use slide with bullets. Never mention scene numbers in the content. Provide unique content for each bullet point. Do not include your own prompts or descriptions or explain yourself why you did what you did, don't leave notes or explain yourself in brackets. If the slide have 1-8 words and you don't have context about it or it can't be summarized futher then no need to give output, leave it blank. Your job is to supplement the narration or subtitles, not be alternative"},
             {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
         ]
     }
