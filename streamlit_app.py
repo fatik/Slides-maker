@@ -147,7 +147,7 @@ def create_slide(layout, content, width=800, height=600):
         d.text((width//2, 50), content['title'], font=title_font, fill="black", anchor="mt")
         
         bullets = content['text'].split('\n')
-        available_height = height - 150  # Subtracting space for title and margins
+        available_height = height - 60  # Subtracting space for title and margins
         bullet_spacing = available_height // (len(bullets) + 1)
         
         for i, bullet in enumerate(bullets, 1):
