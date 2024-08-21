@@ -2,7 +2,12 @@ import streamlit as st
 import re
 from transformers import pipeline, set_seed
 from openai import OpenAI
+import time
+import random
 
+# Suppress warnings
+import warnings
+warnings.filterwarnings("ignore")
 
 # Set up OpenAI client
 client = OpenAI(api_key=st.secrets["openai_api_key"])
@@ -14,15 +19,22 @@ def load_summarizer():
 summarizer = load_summarizer()
 set_seed(42)
 
-def ai_process_content(text, instruction):
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text."},
-            {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
-        ]
-    )
-    return response.choices[0].message.content.strip()
+def ai_process_content(text, instruction, max_retries=5):
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are an AI assistant that helps create concise slide content from video script text."},
+                    {"role": "user", "content": f"Based on this text: '{text}', {instruction}"}
+                ]
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            if attempt == max_retries - 1:
+                st.warning(f"Failed to process content after {max_retries} attempts. Using fallback method.")
+                return summarizer(text, max_length=20, min_length=5, do_sample=False)[0]['summary_text']
+            time.sleep(2 ** attempt + random.random())  # Exponential backoff
 
 def select_layout(scene_content):
     if re.search(r'\d+', scene_content):
@@ -75,6 +87,7 @@ def process_script(script):
     results = []
     for i, scene in enumerate(scenes, 1):
         results.append(process_scene(i, scene))
+        time.sleep(1)  # Add a small delay between processing scenes
     return results
 
 st.title("AI-Powered Scene-Based Slide Generator")
